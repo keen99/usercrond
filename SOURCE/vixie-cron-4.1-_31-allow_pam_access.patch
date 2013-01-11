@@ -1,0 +1,11 @@
+--- usercrond-1.0/do_command.c.allow_pam_access	2005-01-25 09:36:44.541828000 -0500
++++ usercrond-1.0/do_command.c	2005-01-25 10:08:20.435602000 -0500
+@@ -179,6 +179,8 @@
+ #if defined(WITH_PAM)
+ 	retcode = pam_start("crond", usernm, &conv, &pamh);
+ 	PAM_FAIL_CHECK;
++	retcode = pam_set_item(pamh, PAM_TTY, "cron");
++	PAM_FAIL_CHECK;
+ 	retcode = pam_acct_mgmt(pamh, PAM_SILENT);
+ 	PAM_FAIL_CHECK;
+ 	retcode = pam_open_session(pamh, PAM_SILENT);

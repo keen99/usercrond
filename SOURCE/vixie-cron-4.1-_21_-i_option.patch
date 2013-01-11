@@ -1,0 +1,86 @@
+--- usercrond-1.0/crontab.c-i_option	2004-08-10 16:13:37.331529000 -0400
++++ usercrond-1.0/crontab.c	2004-08-10 16:24:14.132091000 -0400
+@@ -71,9 +71,9 @@
+ 
+ #if DEBUGGING
+ static char	*Options[] = { "???", "list", "delete", "edit", "replace" };
+-static char	*getoptargs = "u:lerx:";
++static char	*getoptargs = "u:lerix:";
+ #else
+-static char	*getoptargs = "u:ler";
++static char	*getoptargs = "u:leri";
+ #endif
+ 
+ static	PID_T		Pid;
+@@ -81,6 +81,7 @@
+ static	char		Filename[MAX_FNAME], TempFilename[MAX_FNAME];
+ static	FILE		*NewCrontab;
+ static	int		CheckErrorCount;
++static  int             PromptOnDelete;
+ static	enum opt_t	Option;
+ static	struct passwd	*pw;
+ static	void		list_cmd(void),
+@@ -101,6 +102,7 @@
+ 	fprintf(stderr, "\t-e\t(edit user's crontab)\n");
+ 	fprintf(stderr, "\t-l\t(list user's crontab)\n");
+ 	fprintf(stderr, "\t-r\t(delete user's crontab)\n");
++	fprintf(stderr, "\t-i\t(prompt before deleting user's crontab)\n");
+ 	exit(ERROR_EXIT);
+ }
+ 
+@@ -174,6 +176,7 @@
+ 	strcpy(RealUser, User);
+ 	Filename[0] = '\0';
+ 	Option = opt_unknown;
++	PromptOnDelete = 0;
+ 	while (-1 != (argch = getopt(argc, argv, getoptargs))) {
+ 		switch (argch) {
+ #if DEBUGGING
+@@ -219,6 +222,9 @@
+ 				usage("only one operation permitted");
+ 			Option = opt_edit;
+ 			break;
++		case 'i':
++       		        PromptOnDelete = 1;
++			break;
+ 		default:
+ 			usage("unrecognized option");
+ 		}
+@@ -304,6 +310,14 @@
+ static void
+ delete_cmd(void) {
+ 	char n[MAX_FNAME];
++	if( PromptOnDelete == 1 )
++	{
++	    printf("crontab: really delete %s's crontab? ", User);
++	    fflush(stdout);
++	    fgets(n, MAX_FNAME-1, stdin);
++	    if((n[0] != 'Y') && (n[0] != 'y'))
++		exit(0);
++	}
+ 
+ 	log_it(RealUser, Pid, "DELETE", User);
+ 	if (!glue_strings(n, sizeof n, SPOOL_DIR, User, '/')) {
+--- usercrond-1.0/crontab.1-i_option	2004-08-10 16:13:36.842019000 -0400
++++ usercrond-1.0/crontab.1	2004-08-10 16:13:37.441419000 -0400
+@@ -31,7 +31,7 @@
+ .B crontab
+ .RB [ -u
+ .IR user ]
+-.RB [ -l " | " -r " | " -e ]
++.RB [ -l " | " -r " | " -e ] [ -i ]
+ .SH DESCRIPTION
+ .I Crontab
+ is the program used to install, deinstall or list the tables
+@@ -84,6 +84,11 @@
+ option is used to edit the current crontab using the editor specified by
+ the \s-1VISUAL\s+1 or \s-1EDITOR\s+1 environment variables.  After you exit
+ from the editor, the modified crontab will be installed automatically.
++.PP
++The
++.I -i
++option modifies the -r option to prompt the user for a 'y/Y' response
++before actually removing the crontab.
+ .SH "SEE ALSO"
+ crontab(5), cron(8)
+ .SH FILES

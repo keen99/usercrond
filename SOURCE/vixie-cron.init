@@ -1,0 +1,95 @@
+#! /bin/bash
+#
+# crond          Start/Stop the cron clock daemon.
+#
+# chkconfig: 2345 90 60
+# description: cron is a standard UNIX program that runs user-specified \
+#              programs at periodic scheduled times. vixie cron adds a \
+#              number of features to the basic UNIX cron, including better \
+#              security and more powerful configuration options.
+# processname: crond
+# config: /etc/crontab
+# pidfile: /var/run/crond.pid
+
+# Source function library.
+. /etc/init.d/functions
+. /etc/sysconfig/crond
+t=${CRON_VALIDATE_MAILRCPTS:-UNSET}
+[ "$t" != "UNSET" ] && export CRON_VALIDATE_MAILRCPTS="$t"
+ 
+# See how we were called.
+  
+prog="crond"
+
+start() {
+	echo -n $"Starting $prog: "	
+        if [ -e /var/lock/subsys/crond ]; then
+	    if [ -e /var/run/crond.pid ] && [ -e /proc/`cat /var/run/crond.pid` ]; then
+		echo -n $"cannot start crond: crond is already running.";
+		failure $"cannot start crond: crond already running.";
+		echo
+		return 1
+	    fi
+	fi
+	daemon crond $CRONDARGS
+	RETVAL=$?
+	echo
+	[ $RETVAL -eq 0 ] && touch /var/lock/subsys/crond;
+	return $RETVAL
+}
+
+stop() {
+	echo -n $"Stopping $prog: "
+        if [ ! -e /var/lock/subsys/crond ]; then
+	    echo -n $"cannot stop crond: crond is not running."
+	    failure $"cannot stop crond: crond is not running."
+	    echo
+	    return 1;
+	fi
+	killproc crond
+	RETVAL=$?
+	echo
+        [ $RETVAL -eq 0 ] && rm -f /var/lock/subsys/crond;
+	return $RETVAL
+}	
+
+rhstatus() {
+	status crond
+}	
+
+restart() {
+  	stop
+	start
+}	
+
+reload() {
+	echo -n $"Reloading cron daemon configuration: "
+	killproc crond -HUP
+	RETVAL=$?
+	echo
+	return $RETVAL
+}	
+
+case "$1" in
+  start)
+  	start
+	;;
+  stop)
+  	stop
+	;;
+  restart)
+  	restart
+	;;
+  reload)
+  	reload
+	;;
+  status)
+  	rhstatus
+	;;
+  condrestart)
+  	[ -f /var/lock/subsys/crond ] && restart || :
+	;;
+  *)
+	echo $"Usage: $0 {start|stop|status|reload|restart|condrestart}"
+	exit 1
+esac

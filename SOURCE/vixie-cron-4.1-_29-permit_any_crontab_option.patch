@@ -1,0 +1,113 @@
+--- usercrond-1.0/cron.c.permit_any_crontab_option	2004-07-21 09:31:55.000000000 -0400
++++ usercrond-1.0/cron.c	2005-01-11 13:17:00.944319000 -0500
+@@ -48,7 +48,7 @@
+ usage(void) {
+ 	const char **dflags;
+ 
+-	fprintf(stderr, "usage:  %s [-n] [-x [", ProgramName);
++	fprintf(stderr, "usage:  %s [-n] [-p] [-x [", ProgramName);
+ 	for (dflags = DebugFlagNames; *dflags; dflags++)
+ 		fprintf(stderr, "%s%s", *dflags, dflags[1] ? "," : "]");
+ 	fprintf(stderr, "]\n");
+@@ -434,7 +434,7 @@
+ parse_args(int argc, char *argv[]) {
+ 	int argch;
+ 
+-	while (-1 != (argch = getopt(argc, argv, "nx:"))) {
++	while (-1 != (argch = getopt(argc, argv, "npx:"))) {
+ 		switch (argch) {
+ 		default:
+ 			usage();
+@@ -445,6 +445,9 @@
+ 		case 'n':
+ 			NoFork = 1;
+ 			break;
++		case 'p':
++		        PermitAnyCrontab=1;
++			break;
+ 		}
+ 	}
+ }
+--- usercrond-1.0/database.c.permit_any_crontab_option	2005-01-11 12:47:58.363083000 -0500
++++ usercrond-1.0/database.c	2005-01-11 12:47:58.494951000 -0500
+@@ -257,22 +257,26 @@
+ 		log_it(fname, getpid(), "FSTAT FAILED", tabname);
+ 		goto next_crontab;
+ 	}
+-	if (!S_ISREG(statbuf->st_mode)) {
+-		log_it(fname, getpid(), "NOT REGULAR", tabname);
+-		goto next_crontab;
+-	}
+-	if ((statbuf->st_mode & 07733) != 0600) {
+-		log_it(fname, getpid(), "BAD FILE MODE", tabname);
+-		goto next_crontab;
+-	}
+-	if (statbuf->st_uid != ROOT_UID && (pw == NULL ||
+-	    statbuf->st_uid != pw->pw_uid || strcmp(uname, pw->pw_name) != 0)) {
+-		log_it(fname, getpid(), "WRONG FILE OWNER", tabname);
+-		goto next_crontab;
+-	}
+-	if (statbuf->st_nlink != 1) {
+-		log_it(fname, getpid(), "BAD LINK COUNT", tabname);
+-		goto next_crontab;
++
++	if ( PermitAnyCrontab == 0 )
++	{
++	    if (!S_ISREG(statbuf->st_mode)) {
++		    log_it(fname, getpid(), "NOT REGULAR", tabname);
++		    goto next_crontab;
++	    }
++	    if ((statbuf->st_mode & 07533) != 0400) {
++		    log_it(fname, getpid(), "BAD FILE MODE", tabname);
++		    goto next_crontab;
++	    }
++	    if (statbuf->st_uid != ROOT_UID && (pw == NULL ||
++		statbuf->st_uid != pw->pw_uid || strcmp(uname, pw->pw_name) != 0)) {
++		    log_it(fname, getpid(), "WRONG FILE OWNER", tabname);
++		    goto next_crontab;
++	    }
++	    if (statbuf->st_nlink != 1) {
++		    log_it(fname, getpid(), "BAD LINK COUNT", tabname);
++		    goto next_crontab;
++	    }
+ 	}
+ 
+ 	Debug(DLOAD, ("\t%s:", fname))
+--- usercrond-1.0/globals.h.permit_any_crontab_option	2004-07-21 09:31:55.000000000 -0400
++++ usercrond-1.0/globals.h	2005-01-11 12:47:58.505940000 -0500
+@@ -63,6 +63,7 @@
+ XTRN int	LineNumber INIT(0);
+ XTRN time_t	StartTime INIT(0);
+ XTRN int	NoFork INIT(0);
++XTRN int        PermitAnyCrontab INIT(0);
+ 
+ #if DEBUGGING
+ XTRN int	DebugFlags INIT(0);
+--- usercrond-1.0/cron.8.permit_any_crontab_option	2005-01-11 12:47:58.341105000 -0500
++++ usercrond-1.0/cron.8	2005-01-11 12:47:58.516929000 -0500
+@@ -28,6 +28,7 @@
+ .RB [ \-l
+ .IR load_avg ]
+ .RB [ \-n ]
++.RB [ \-p ]
+ .SH DESCRIPTION
+ .I Cron
+ should be started from /etc/rc or /etc/rc.local.  It will return immediately,
+@@ -89,11 +90,12 @@
+ .IR syslog (3).
+ .SH CAVEATS
+ In this version of
+-.BR cron ,
+-/etc/crontab must not be writable by any user other than root.
+-No crontab files may be links, or linked to by any other file.
+-No crontab files may be executable, or be writable by any user
+-other than their owner.
++.BR cron
++, without the -p option,
++/etc/crontab must not be writable by any user other than root,
++no crontab files may be links, or linked to by any other file,
++and no crontab files may be executable, or be writable by any
++user other than their owner.
+ .SH "SEE ALSO"
+ .IR crontab (1),
+ .IR crontab (5),

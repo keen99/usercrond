@@ -1,0 +1,14 @@
+--- usercrond-1.0/do_command.c.rfc3834	2006-08-23 11:19:19.000000000 -0400
++++ usercrond-1.0/do_command.c	2006-08-23 11:19:19.000000000 -0400
+@@ -436,6 +436,11 @@
+ 					fprintf(mail,"Content-Transfer-Encoding: %s\n", content_transfer_encoding);
+ 				}
+ 
++				/* The Auto-Submitted header is
++				 * defined (and suggested by) RFC3834.
++				 */
++				fprintf(mail, "Auto-Submitted: auto-generated\n");
++
+ 				for (env = jobenv;  *env;  env++)
+ 					fprintf(mail, "X-Cron-Env: <%s>\n",
+ 						*env);

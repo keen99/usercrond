@@ -1,0 +1,95 @@
+#! /bin/bash
+#
+# usercrond          Start/Stop the usercrond daemon for the tw user.
+#
+# chkconfig: 2345 90 60
+# description: usercrond is like cron, but per user
+# processname: usercrond
+# pidfile: $HOME/usercrond.pid
+
+#started life as /etc/init.d/crond
+
+CRONDUSER="tw"
+eval CRONDHOME="~${CRONDUSER}"
+prog="usercrond"
+pidfile="${CRONDHOME}/${prog}.pid"
+
+# Source function library.
+. /etc/init.d/functions
+[ -e /etc/sysconfig/${prog} ] && . /etc/sysconfig/${prog}
+#t=${CRON_VALIDATE_MAILRCPTS:-UNSET}
+#[ "$t" != "UNSET" ] && export CRON_VALIDATE_MAILRCPTS="$t"
+ 
+
+start() {
+	echo -n $"Starting $prog: "	
+    if [ -e ${pidfile} ] && [ -e /proc/`cat ${pidfile}` ]; then
+		echo -n $"cannot start ${prog}: ${prog} is already running.";
+		failure $"cannot start ${prog}: ${prog} already running.";
+		echo
+		return 0  #this isn't a failure.
+    fi
+	daemon su -l ${CRONDUSER} -c "${prog} $CRONDARGS"
+	RETVAL=$?
+#	echo
+#	[ $RETVAL -eq 0 ] && touch /var/lock/subsys/${prog};
+	return $RETVAL
+}
+
+stop() {
+	echo -n $"Stopping $prog: "
+	#if [ ! -e /var/lock/subsys/${prog} ]; then
+	if [ ! -e ${pidfile} ] || [ ! -e /proc/`cat ${pidfile}` ]; then
+	    echo -n $"cannot stop ${prog}: ${prog} is not running.	"
+	    failure $"cannot stop ${prog}: ${prog} is not running.	"
+	    echo
+	    return 1;
+	fi
+	killproc ${prog}
+	RETVAL=$?
+	echo
+#	[ $RETVAL -eq 0 ] && rm -f /var/lock/subsys/${prog};
+	return $RETVAL
+}	
+
+rhstatus() {
+	status ${prog}
+}	
+
+restart() {
+  	stop
+	start
+}	
+
+reload() {
+	echo -n $"Reloading ${prog} daemon configuration: "
+	killproc ${prog} -HUP
+	RETVAL=$?
+	echo
+	return $RETVAL
+}	
+
+case "$1" in
+  start)
+  	start
+	;;
+  stop)
+  	stop
+	;;
+  restart)
+  	restart
+	;;
+  reload)
+  	reload
+	;;
+  status)
+  	rhstatus
+	;;
+  condrestart)
+  	#[ -f /var/lock/subsys/${prog} ] && restart || :
+	[ -e ${pidfile} ] && [ -e /proc/`cat ${pidfile}` ] && restart || :  
+	;;
+  *)
+	echo $"Usage: $0 {start|stop|status|reload|restart|condrestart}"
+	exit 1
+esac

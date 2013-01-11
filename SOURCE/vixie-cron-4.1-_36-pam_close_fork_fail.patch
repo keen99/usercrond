@@ -1,0 +1,14 @@
+--- usercrond-1.0/do_command.c.pam_close_fork_fail	2005-04-07 13:19:38.000000000 -0400
++++ usercrond-1.0/do_command.c	2005-04-08 12:13:45.354702000 -0400
+@@ -196,6 +196,11 @@
+ 	switch (fork()) {
+ 	case -1:
+ 		log_it("CRON", getpid(), "error", "can't fork");
++#ifdef WITH_PAM
++                pam_setcred(pamh, PAM_DELETE_CRED | PAM_SILENT);
++                pam_close_session(pamh, PAM_SILENT);
++                pam_end(pamh, PAM_ABORT);
++#endif
+ 		exit(ERROR_EXIT);
+ 		/*NOTREACHED*/
+ 	case 0:

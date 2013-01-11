@@ -1,0 +1,8 @@
+--- usercrond-1.0/crond.pam.session-system-auth	2006-09-05 12:54:14.000000000 +0200
++++ usercrond-1.0/crond.pam	2006-09-05 12:55:51.000000000 +0200
+@@ -8,4 +8,4 @@
+ account    required   pam_access.so
+ account    include    system-auth
+ session    required   pam_loginuid.so
+-session	   required   pam_limits.so
++session    include    system-auth

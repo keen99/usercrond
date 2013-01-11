@@ -1,0 +1,14 @@
+--- usercrond-1.0/crond.pam.bz178931	2006-01-26 14:26:55.000000000 -0500
++++ usercrond-1.0/crond.pam	2006-01-26 14:33:04.000000000 -0500
+@@ -7,10 +7,5 @@
+ auth       include    system-auth
+ account    required   pam_access.so
+ account    include    system-auth
+-session    include    system-auth
+ session    required   pam_loginuid.so
+-# To enable PAM user limits for cron jobs, 
+-# configure /etc/security/limits.conf and 
+-# uncomment this line:
+-# session  required   pam_limits.so
+-#
++session	   required   pam_limits.so

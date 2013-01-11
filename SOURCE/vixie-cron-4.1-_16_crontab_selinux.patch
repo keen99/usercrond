@@ -1,0 +1,86 @@
+--- usercrond-1.0/crontab.c.crontab_selinux	2004-07-28 13:46:04.514451709 -0400
++++ usercrond-1.0/crontab.c	2004-07-28 14:11:07.999614447 -0400
+@@ -31,6 +31,39 @@
+ #define	MAIN_PROGRAM
+ 
+ #include "cron.h"
++#ifdef WITH_SELINUX
++#include <selinux/selinux.h>
++#include <selinux/flask.h>
++#include <selinux/av_permissions.h>
++#include <selinux/context.h>
++
++static int checkAccess(int selaccess) {
++	int status=-1;
++	security_context_t user_context;
++	if (is_selinux_enabled() == 0) 
++		return 0;
++	if( getprevcon(&user_context)==0 ) {
++		struct av_decision avd;
++		int retval = security_compute_av(user_context,
++						 user_context,
++						 SECCLASS_PASSWD,
++						 selaccess,
++						 &avd);
++		
++		if ((retval == 0) && 
++		    ((selaccess & avd.allowed) == selaccess)) {
++			status=0;
++		}
++		freecon(user_context);
++	}
++	
++	if (status != 0 && security_getenforce()==0) 
++		status=0;
++	
++	return status;
++}
++#endif
++
+ 
+ #define NHEADER_LINES 0
+ 
+@@ -155,6 +188,13 @@
+ 					"must be privileged to use -u\n");
+ 				exit(ERROR_EXIT);
+ 			}
++#ifdef WITH_SELINUX
++			if (checkAccess(PASSWD__ROOTOK)!=0) {
++				fprintf(stderr,
++					"Access denied by SELinux, must be privileged to use -u\n");
++				exit(ERROR_EXIT);
++			}
++#endif
+ 			if (!(pw = getpwnam(optarg))) {
+ 				fprintf(stderr, "%s:  user `%s' unknown\n",
+ 					ProgramName, optarg);
+--- usercrond-1.0/user.c.crontab_selinux	2004-07-28 13:46:04.480455523 -0400
++++ usercrond-1.0/user.c	2004-07-28 14:02:19.777972399 -0400
+@@ -30,15 +30,16 @@
+ #include <selinux/selinux.h>
+ #include <selinux/flask.h>
+ #include <selinux/av_permissions.h>
++#include <selinux/get_context_list.h>
+ #endif
+ 
+ #include "cron.h"
+ 
+ #ifdef WITH_SELINUX
+-static	int get_security_context(char *name, 
++static	int get_security_context(const char *name, 
+ 				 int crontab_fd, 
+ 				 security_context_t *rcontext, 
+-				 char *tabname) {
++				 const char *tabname) {
+ 	security_context_t scontext;
+ 	security_context_t  file_context=NULL;
+ 	struct av_decision avd;
+@@ -147,7 +148,7 @@
+ 
+ #ifdef WITH_SELINUX
+ 	if (is_selinux_enabled() > 0) {
+-		char *sname=uname;
++		const char *sname=uname;
+ 		if (pw==NULL) {
+ 			sname="system_u";
+ 		}

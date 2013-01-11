@@ -1,0 +1,32 @@
+diff -uNr usercrond-1.0/security.c usercrond-1.0.new/security.c
+--- usercrond-1.0/security.c	2007-05-31 11:29:24.000000000 +0100
++++ usercrond-1.0.new/security.c	2007-05-31 11:48:18.000000000 +0100
+@@ -195,13 +195,6 @@
+ 	return -1;
+     }
+ 
+-    if ( chdir(homedir) == -1 )
+-    {
+-	log_it("CRON", getpid(), "chdir(HOME) failed:", strerror(errno));
+-	log_it("CRON", getpid(), homedir, strerror(errno));
+-	return -1;
+-    }
+-
+     if ( initgroups( pw->pw_name, pw->pw_gid ) != 0 )
+     {
+ 	log_it("CRON", getpid(), "initgroups failed:", strerror(errno));
+@@ -213,6 +206,13 @@
+ 	log_it("CRON", getpid(), "setuid failed:", strerror(errno));
+ 	return -1;
+     }
++
++    if ( chdir(homedir) == -1 )
++    {
++	log_it("CRON", getpid(), "chdir(HOME) failed:", strerror(errno));
++	log_it("CRON", getpid(), homedir, strerror(errno));
++	return -1;
++    }
+     
+     return 0;
+ }
+

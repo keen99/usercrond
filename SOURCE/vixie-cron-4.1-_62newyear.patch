@@ -1,0 +1,11 @@
+--- usercrond-1.0/misc.c.plus	2007-01-22 11:33:10.000000000 +0100
++++ usercrond-1.0/misc.c	2007-01-22 11:34:23.000000000 +0100
+@@ -773,7 +773,7 @@
+ 	if (local->tm_year < gmt.tm_year)
+ 		offset -= 24 * 3600;
+ 	else if (local->tm_year > gmt.tm_year)
+-		offset -= 24 * 3600;
++		offset += 24 * 3600;
+ 	else if (local->tm_yday < gmt.tm_yday)
+ 		offset -= 24 * 3600;
+ 	else if (local->tm_yday > gmt.tm_yday)

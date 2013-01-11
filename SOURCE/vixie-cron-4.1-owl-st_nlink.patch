@@ -1,0 +1,12 @@
+diff -urp usercrond-1.0.orig/database.c usercrond-1.0/database.c
+--- usercrond-1.0.orig/database.c	2007-04-24 09:06:10.000000000 -0400
++++ usercrond-1.0/database.c	2007-04-24 09:35:52.000000000 -0400
+@@ -256,7 +256,7 @@ process_crontab(const char *uname, const
+ 		    log_it(fname, getpid(), "WRONG FILE OWNER", tabname);
+ 		    goto next_crontab;
+ 	    }
+-	    if (statbuf->st_nlink != 1) {
++	    if (pw && statbuf->st_nlink != 1) {
+ 		    log_it(fname, getpid(), "BAD LINK COUNT", tabname);
+ 		    goto next_crontab;
+ 	    }

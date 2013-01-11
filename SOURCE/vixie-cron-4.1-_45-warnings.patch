@@ -1,0 +1,173 @@
+--- usercrond-1.0/env.c.warnings	2004-07-21 09:31:55.000000000 -0400
++++ usercrond-1.0/env.c	2005-10-18 14:38:49.499570000 -0400
+@@ -48,8 +48,8 @@
+ 	int count, i, save_errno;
+ 	char **p;
+ 
+-	for (count = 0; envp[count] != NULL; count++)
+-		NULL;
++	for (count = 0; envp[count] != NULL; count++);
++
+ 	p = (char **) malloc((count+1) * sizeof(char *));  /* 1 for the NULL */
+ 	if (p != NULL) {
+ 		for (i = 0; i < count; i++)
+--- usercrond-1.0/misc.c.warnings	2005-10-18 14:38:48.732338000 -0400
++++ usercrond-1.0/misc.c	2005-10-18 14:38:49.520549000 -0400
+@@ -153,7 +153,7 @@
+ 		for (test = DebugFlagNames, mask = 1;
+ 		     *test != NULL && strcmp_until(*test, pc, ',');
+ 		     test++, mask <<= 1)
+-			NULL;
++		    ;
+ 
+ 		if (!*test) {
+ 			fprintf(stderr,
+@@ -255,9 +255,17 @@
+ 	}
+ 	if (grp != NULL) {
+ 		if (sb.st_gid != grp->gr_gid)
+-			chown(SPOOL_DIR, -1, grp->gr_gid);
++		    if( chown(SPOOL_DIR, -1, grp->gr_gid) == -1 )
++		    {
++			fprintf(stderr,"chdir %s failed: %s\n", SPOOL_DIR, strerror(errno));
++			exit(ERROR_EXIT);
++		    }
+ 		if (sb.st_mode != 01730)
+-			chmod(SPOOL_DIR, 01730);
++		    if( chmod(SPOOL_DIR, 01730) == -1 )
++		    {
++			fprintf(stderr,"chmod 01730 %s failed: %s\n", SPOOL_DIR, strerror(errno));
++			exit(ERROR_EXIT);
++		    }
+ 	}
+ }
+ 
+@@ -275,7 +283,7 @@
+ 	const char *pidfile;
+ 	char *ep;
+ 	long otherpid=-1;
+-	ssize_t num;
++	ssize_t num, len;
+ 
+ 	if (closeflag) {
+ 		/* close stashed fd for child so we don't leak it. */
+@@ -324,8 +332,14 @@
+ 
+ 	sprintf(buf, "%ld\n", (long)getpid());
+ 	(void) lseek(fd, (off_t)0, SEEK_SET);
+-	num = write(fd, buf, strlen(buf));
+-	(void) ftruncate(fd, num);
++	len =  strlen(buf);
++	if( (num = write(fd, buf, len)) != len )
++	    log_it("CRON", getpid(), "write() failed:", strerror(errno));
++	else
++	{	    
++	    if( ftruncate(fd, num) == -1 )
++		log_it("CRON", getpid(), "ftruncate() failed:", strerror(errno));
++	}
+ 
+ 	/* abandon fd even though the file is open. we need to keep
+ 	 * it open and locked, but we don't need the handles elsewhere.
+--- usercrond-1.0/do_command.c.warnings	2005-10-18 14:38:49.459610000 -0400
++++ usercrond-1.0/do_command.c	2005-10-18 14:38:49.541528000 -0400
+@@ -137,8 +137,17 @@
+ 
+ 	/* create some pipes to talk to our future child
+ 	 */
+-	pipe(stdin_pipe);	/* child's stdin */
+-	pipe(stdout_pipe);	/* child's stdout */
++	if( pipe(stdin_pipe) == -1 )	/* child's stdin */
++	{
++	    log_it("CRON", getpid(), "pipe() failed:", strerror(errno));
++	    return;
++	}
++
++	if( pipe(stdout_pipe) == -1 )	/* child's stdout */
++	{
++	    log_it("CRON", getpid(), "pipe() failed:", strerror(errno));
++	    return;
++	}	
+ 	
+ 	/* since we are a forked process, we can diddle the command string
+ 	 * we were passed -- nobody else is going to use it again, right?
+@@ -318,7 +327,11 @@
+ 		setuid(e->pwd->pw_uid);	/* we aren't root after this... */
+ 
+ #endif /* LOGIN_CAP */
+-		chdir(env_get("HOME", e->envp));
++		if ( chdir(env_get("HOME", e->envp)) == -1 )
++		{
++		    log_it("CRON", getpid(), "chdir(HOME) failed:", strerror(errno));
++		    _exit(ERROR_EXIT);
++		}
+ 
+ 		/*
+ 		 * Exec the command.
+--- usercrond-1.0/pw_dup.c.warnings	2005-10-18 14:38:48.714356000 -0400
++++ usercrond-1.0/pw_dup.c	2005-10-18 14:38:49.561508000 -0400
+@@ -47,7 +47,7 @@
+ struct passwd *
+ pw_dup(const struct passwd *pw) {
+ 	char		*cp;
+-	size_t		 nsize=0, psize=0, csize=0, gsize=0, dsize=0, ssize=0, total=0;
++	size_t		 nsize=0, psize=0, gsize=0, dsize=0, ssize=0, total=0;
+ 	struct passwd	*newpw;
+ 
+ 	/* Allocate in one big chunk for easy freeing */
+--- usercrond-1.0/crontab.c.warnings	2005-10-18 14:38:49.322747000 -0400
++++ usercrond-1.0/crontab.c	2005-10-18 14:40:57.490451000 -0400
+@@ -283,14 +283,14 @@
+ 
+ static void
+ delete_cmd(void) {
+-	char n[MAX_FNAME];
++        char n[MAX_FNAME]="";
+ 	if( PromptOnDelete == 1 )
+ 	{
+ 	    printf("crontab: really delete %s's crontab? ", User);
+ 	    fflush(stdout);
+-	    fgets(n, MAX_FNAME-1, stdin);
+-	    if((n[0] != 'Y') && (n[0] != 'y'))
+-		exit(0);
++	    if( (fgets(n, MAX_FNAME-1, stdin)==0L)
++	      ||((n[0] != 'Y') && (n[0] != 'y'))
++	      )	exit(0);
+ 	}
+ 
+ 	log_it(RealUser, Pid, "DELETE", User);
+@@ -534,7 +534,8 @@
+ 			printf("Do you want to retry the same edit? ");
+ 			fflush(stdout);
+ 			q[0] = '\0';
+-			(void) fgets(q, sizeof q, stdin);
++			if( fgets(q, sizeof q, stdin) == 0L )
++			    continue;
+ 			switch (q[0]) {
+ 			case 'y':
+ 			case 'Y':
+@@ -575,7 +576,6 @@
+ 	int error = 0;
+ 	entry *e;
+ 	uid_t file_owner;
+-	time_t now = time(NULL);
+ 	char **envp = env_init();
+ 
+ 	if (envp == NULL) {
+@@ -618,9 +618,15 @@
+ 	Set_LineNum(1)
+ 	while (EOF != (ch = get_char(NewCrontab)))
+ 		putc(ch, tmp);
+-	ftruncate(fileno(tmp), ftell(tmp));	/* XXX redundant with "w+"? */
++	if( ftruncate(fileno(tmp), ftell(tmp)) == -1 )
++	{
++	    fprintf(stderr, "%s: error while writing new crontab to %s\n",
++		    ProgramName, TempFilename);
++	    fclose(tmp);
++	    error = -2;
++	    goto done;  
++	}
+ 	fflush(tmp);  rewind(tmp);
+-
+ 	if (ferror(tmp)) {
+ 		fprintf(stderr, "%s: error while writing new crontab to %s\n",
+ 			ProgramName, TempFilename);

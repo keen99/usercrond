@@ -1,0 +1,11 @@
+--- usercrond-1.0/misc.c.allow-root-crontab	2004-09-29 10:40:43.447573000 -0400
++++ usercrond-1.0/misc.c	2004-09-29 11:39:21.145949000 -0400
+@@ -451,6 +451,8 @@
+ 	int	isallowed;
+ 	char    buf[128];
+ 
++	if ( getuid() == 0 )
++	    return TRUE;
+ 	isallowed = FALSE;
+ 	if ((fp = fopen(allow_file, "r")) != NULL) {
+ 		isallowed = in_file(username, fp, FALSE);

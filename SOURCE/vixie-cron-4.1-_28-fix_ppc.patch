@@ -1,0 +1,22 @@
+--- usercrond-1.0/Makefile.fix_ppc	2004-12-03 17:08:36.425211000 -0500
++++ usercrond-1.0/Makefile	2004-12-03 17:09:14.264335000 -0500
+@@ -77,7 +77,7 @@
+ #INSTALL = installbsd
+ INSTALL = install
+ #<<any special load flags>>
+-LDFLAGS		=
++LDFLAGS		=	-g
+ #################################### end configurable stuff
+ 
+ SHELL		=	/bin/sh
+--- usercrond-1.0/crontab.c.fix_ppc	2004-12-03 17:08:37.138499000 -0500
++++ usercrond-1.0/crontab.c	2004-12-03 17:10:38.077437000 -0500
+@@ -318,7 +318,7 @@
+ edit_cmd(void) {
+ 	char n[MAX_FNAME], q[MAX_TEMPSTR], *editor;
+ 	FILE *f;
+-	int ch, t, x;
++	int ch='\0', t, x;
+ 	struct stat statbuf;
+ 	struct utimbuf utimebuf;
+ 	WAIT_T waiter;

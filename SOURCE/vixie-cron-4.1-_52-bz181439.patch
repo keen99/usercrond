@@ -1,0 +1,101 @@
+--- usercrond-1.0/security.c.bz181439	2006-02-14 16:16:49.000000000 -0500
++++ usercrond-1.0/security.c	2006-02-14 16:16:54.000000000 -0500
+@@ -190,6 +190,7 @@
+ 			  int crontab_fd, 
+ 			  security_context_t *rcontext, 
+ 			  const char *tabname) {
++#ifdef WITH_SELINUX
+ 	security_context_t scontext=NULL;
+ 	security_context_t  file_context=NULL;
+ 	struct av_decision avd;
+@@ -199,8 +200,6 @@
+ 
+ 	*rcontext = NULL;
+ 
+-#ifdef WITH_SELINUX
+-
+ 	if (is_selinux_enabled() <= 0) 
+ 	    return 0;
+ 
+@@ -286,14 +285,14 @@
+    crontab environment */
+ static char ** build_env(char **cronenv)
+ {
++#ifdef WITH_PAM
+     char **jobenv = cronenv;
+-
+     char **pamenv = pam_getenvlist(pamh);
+     char *cronvar;
+     int count = 0;
+-
+     jobenv = env_copy(pamenv);
+ 
++
+         /* Now add the cron environment variables. Since env_set()
+            overwrites existing variables, this will let cron's
+            environment settings override pam's */
+@@ -304,6 +303,8 @@
+ 	    return NULL;
+ 	}
+     }
+-
+-    return jobenv;
++    return jobenv;    
++#else
++    return env_copy(cronenv);
++#endif
+ }
+--- usercrond-1.0/Makefile.bz181439	2006-02-14 16:16:49.000000000 -0500
++++ usercrond-1.0/Makefile	2006-02-14 16:16:50.000000000 -0500
+@@ -60,7 +60,19 @@
+ INCLUDE		=	-I.
+ #INCLUDE	=
+ #<<need getopt()>>
+-LIBS		= 	-lselinux -lpam -lpam_misc -laudit
++ifdef WITH_SELINUX
++SELINUX_LIBS=-lselinux
++SELINUX_DEFS=-DWITH_SELINUX
++endif
++ifdef WITH_PAM
++PAM_LIBS=-lpam -lpam_misc
++PAM_DEFS=-DWITH_PAM
++endif
++ifdef WITH_AUDIT
++AUDIT_LIBS=-laudit
++AUDIT_DEFS=-DWITH_AUDIT
++endif
++LIBS		=       $(SELINUX_LIBS) $(PAM_LIBS) $(AUDIT_LIBS)
+ #<<optimize or debug?>>
+ #CDEBUG		=	-O
+ #CDEBUG		=	-g
+@@ -70,7 +82,7 @@
+ #<<want to use a nonstandard CC?>>
+ CC		=	gcc -Wall -Wno-unused -Wno-comment
+ #<<manifest defines>>
+-DEFS		=	-DWITH_SELINUX -DWITH_PAM -DWITH_AUDIT
++DEFS		=	$(SELINUX_DEFS) $(PAM_DEFS) $(AUDIT_DEFS)
+ #(SGI IRIX systems need this)
+ #DEFS		=	-D_BSD_SIGNALS -Dconst=
+ #<<the name of the BSD-like install program>>
+--- usercrond-1.0/structs.h.bz181439	2006-02-14 16:16:49.000000000 -0500
++++ usercrond-1.0/structs.h	2006-02-14 16:16:50.000000000 -0500
+@@ -44,6 +44,9 @@
+ 			 *
+ 			 * These are the crontabs.
+ 			 */
++#ifndef WITH_SELINUX
++#define security_context_t unsigned
++#endif
+ 
+ typedef	struct _user {
+ 	struct _user	*next, *prev;	/* links */
+@@ -51,9 +54,7 @@
+         char            *tabname;       /* /etc/cron.d/ file name or NULL */
+ 	time_t		mtime;		/* last modtime of crontab */
+ 	entry		*crontab;	/* this person's crontab */
+-#ifdef WITH_SELINUX
+         security_context_t scontext;    /* SELinux security context */
+-#endif        
+ } user;
+ 
+ typedef	struct _cron_db {

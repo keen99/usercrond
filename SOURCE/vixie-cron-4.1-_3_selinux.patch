@@ -1,0 +1,199 @@
+--- usercrond-1.0/user.c.selinux	2004-07-21 09:31:55.000000000 -0400
++++ usercrond-1.0/user.c	2004-07-22 13:17:29.000000000 -0400
+@@ -26,8 +26,72 @@
+ /* vix 26jan87 [log is in RCS file]
+  */
+ 
++#ifdef WITH_SELINUX
++#include <selinux/selinux.h>
++#include <selinux/flask.h>
++#include <selinux/av_permissions.h>
++#endif
++
+ #include "cron.h"
+ 
++#ifdef WITH_SELINUX
++static	int get_security_context(char *name, 
++				 int crontab_fd, 
++				 security_context_t *rcontext, 
++				 char *tabname) {
++	security_context_t scontext;
++	security_context_t  file_context=NULL;
++	struct av_decision avd;
++	int retval=0;
++	*rcontext = NULL;
++	if (get_default_context(name, NULL, &scontext)) {
++		if (security_getenforce() > 0) {
++			log_it(name, getpid(), "No SELinux security context",tabname);
++			return -1;
++		} else {
++			log_it(name, getpid(), "No security context but SELinux in permissive mode, continuing",tabname);
++		}
++	}
++	
++	if (fgetfilecon(crontab_fd, &file_context) < OK) {
++		if (security_getenforce() > 0) {
++			log_it(name, getpid(), "getfilecon FAILED", tabname);
++			freecon(scontext);
++			return -1;
++		} else {
++			log_it(name, getpid(), "getfilecon FAILED but SELinux in permissive mode, continuing", tabname);
++			*rcontext=scontext;
++			return 0;
++		}
++	}
++    
++	/*
++	 * Since crontab files are not directly executed,
++	 * crond must ensure that the crontab file has
++	 * a context that is appropriate for the context of
++	 * the user cron job.  It performs an entrypoint
++	 * permission check for this purpose.
++	 */
++	retval = security_compute_av(scontext,
++				     file_context,
++				     SECCLASS_FILE,
++				     FILE__ENTRYPOINT,
++				     &avd);
++	freecon(file_context);
++	if (retval || ((FILE__ENTRYPOINT & avd.allowed) != FILE__ENTRYPOINT)) {
++		if (security_getenforce() > 0) {
++			log_it(name, getpid(), "ENTRYPOINT FAILED", tabname);
++			freecon(scontext);
++			return -1;
++		} else {
++			log_it(name, getpid(), "ENTRYPOINT FAILED but SELinux in permissive mode, continuing", tabname);
++		}
++	}
++	*rcontext=scontext;
++	return 0;
++}
++#endif
++
+ void
+ free_user(user *u) {
+ 	entry *e, *ne;
+@@ -37,11 +101,14 @@
+ 		ne = e->next;
+ 		free_entry(e);
+ 	}
++#ifdef WITH_SELINUX
++	freecon(u->scontext);
++#endif	
+ 	free(u);
+ }
+ 
+ user *
+-load_user(int crontab_fd, struct passwd	*pw, const char *name) {
++load_user(int crontab_fd, struct passwd	*pw, const char *uname, const char *fname, const char *tabname) {
+ 	char envstr[MAX_ENVSTR];
+ 	FILE *file;
+ 	user *u;
+@@ -60,7 +127,7 @@
+ 	 */
+ 	if ((u = (user *) malloc(sizeof(user))) == NULL)
+ 		return (NULL);
+-	if ((u->name = strdup(name)) == NULL) {
++	if ((u->name = strdup(fname)) == NULL) {
+ 		save_errno = errno;
+ 		free(u);
+ 		errno = save_errno;
+@@ -78,6 +145,22 @@
+ 		return (NULL);
+ 	}
+ 
++#ifdef WITH_SELINUX
++	if (is_selinux_enabled() > 0) {
++		char *sname=uname;
++		if (pw==NULL) {
++			sname="system_u";
++		}
++
++		if (get_security_context(sname, crontab_fd, 
++					 &u->scontext, tabname) != 0) {
++			free_user(u);
++			u = NULL;
++			goto done;
++		}
++	}
++#endif
++
+ 	/* load the crontab
+ 	 */
+ 	while ((status = load_env(envstr, file)) >= OK) {
+--- usercrond-1.0/funcs.h.selinux	2004-07-21 09:31:55.000000000 -0400
++++ usercrond-1.0/funcs.h	2004-07-22 13:19:35.000000000 -0400
+@@ -65,7 +65,7 @@
+ 		**env_copy(char **),
+ 		**env_set(char **, char *);
+ 
+-user		*load_user(int, struct passwd *, const char *),
++user		*load_user(int, struct passwd *, const char *, const char *, const char *),
+ 		*find_user(cron_db *, const char *);
+ 
+ entry		*load_entry(FILE *, void (*)(), struct passwd *, char **);
+--- usercrond-1.0/structs.h.selinux	2004-07-21 09:31:55.000000000 -0400
++++ usercrond-1.0/structs.h	2004-07-22 13:25:38.000000000 -0400
+@@ -50,6 +50,9 @@
+ 	char		*name;
+ 	time_t		mtime;		/* last modtime of crontab */
+ 	entry		*crontab;	/* this person's crontab */
++#ifdef WITH_SELINUX
++        security_context_t scontext;    /* SELinux security context */
++#endif
+ } user;
+ 
+ typedef	struct _cron_db {
+--- usercrond-1.0/do_command.c.selinux	2004-07-21 09:31:55.000000000 -0400
++++ usercrond-1.0/do_command.c	2004-07-22 13:22:08.000000000 -0400
+@@ -265,6 +265,20 @@
+ 				_exit(OK_EXIT);
+ 			}
+ # endif /*DEBUGGING*/
++
++#ifdef WITH_SELINUX
++			if (is_selinux_enabled() >0 ) {
++				if (setexeccon(u->scontext) < 0) {
++					if (security_getenforce() > 0) {
++						fprintf(stderr, 
++							"Could not set exec context to %s for user  %s\n", 
++							u->scontext,u->name);
++						_exit(ERROR_EXIT);
++					}
++				}
++			}
++#endif
++
+ 			execle(shell, shell, "-c", e->cmd, (char *)0, e->envp);
+ 			fprintf(stderr, "execl: couldn't exec `%s'\n", shell);
+ 			perror("execl");
+--- usercrond-1.0/cron.h.selinux	2004-07-21 09:31:55.000000000 -0400
++++ usercrond-1.0/cron.h	2004-07-22 13:58:10.000000000 -0400
+@@ -29,6 +29,11 @@
+  */
+ 
+ #define CRON_VERSION "V5.0"
++
++#ifdef WITH_SELINUX
++#include <selinux/selinux.h>
++#endif
++
+ #include "config.h"
+ #include "externs.h"
+ #include "pathnames.h"
+@@ -36,3 +41,4 @@
+ #include "structs.h"
+ #include "funcs.h"
+ #include "globals.h"
++
+--- usercrond-1.0/database.c.selinux	2004-07-21 09:31:55.000000000 -0400
++++ usercrond-1.0/database.c	2004-07-22 14:18:31.000000000 -0400
+@@ -245,7 +245,7 @@
+ 		free_user(u);
+ 		log_it(fname, getpid(), "RELOAD", tabname);
+ 	}
+-	u = load_user(crontab_fd, pw, fname);
++	u = load_user(crontab_fd, pw, uname, fname, tabname);
+ 	if (u != NULL) {
+ 		u->mtime = statbuf->st_mtime;
+ 		link_user(new_db, u);

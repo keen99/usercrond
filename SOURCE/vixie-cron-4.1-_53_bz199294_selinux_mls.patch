@@ -1,0 +1,437 @@
+--- usercrond-1.0/crontab.c.selinux_mls	2006-07-20 22:05:13.000000000 -0400
++++ usercrond-1.0/crontab.c	2006-07-20 22:05:13.000000000 -0400
+@@ -43,10 +43,19 @@
+ 
+ #if DEBUGGING
+ static char	*Options[] = { "???", "list", "delete", "edit", "replace" };
++#   ifdef WITH_SELINUX
++static char	*getoptargs = "u:lerisx:";
++#   else
+ static char	*getoptargs = "u:lerix:";
++#   endif
+ #else
++#   ifdef WITH_SELINUX
++static char	*getoptargs = "u:leris";
++#   else
+ static char	*getoptargs = "u:leri";
++#   endif
+ #endif
++static char     *selinux_context = 0;
+ 
+ static	PID_T		Pid;
+ static	char		User[MAX_UNAME], RealUser[MAX_UNAME];
+@@ -75,6 +84,9 @@
+ 	fprintf(stderr, "\t-l\t(list user's crontab)\n");
+ 	fprintf(stderr, "\t-r\t(delete user's crontab)\n");
+ 	fprintf(stderr, "\t-i\t(prompt before deleting user's crontab)\n");
++#ifdef WITH_SELINUX
++	fprintf(stderr, "\t-s\t(selinux context)\n");
++#endif
+ 	exit(ERROR_EXIT);
+ }
+ 
+@@ -198,6 +210,16 @@
+ 		case 'i':
+        		        PromptOnDelete = 1;
+ 			break;
++#ifdef WITH_SELINUX
++	        case 's':
++		        if ( getprevcon( (security_context_t*)&(selinux_context) ) ) 
++			{
++				fprintf(stderr,
++					"Cannot obtain SELinux process context\n");
++				exit(ERROR_EXIT);
++			}
++			break;
++#endif 
+ 		default:
+ 			usage("unrecognized option");
+ 		}
+@@ -317,7 +339,7 @@
+ edit_cmd(void) {
+ 	char n[MAX_FNAME], q[MAX_TEMPSTR], *editor;
+ 	FILE *f;
+-	int ch='\0', t, x;
++	int ch='\0', t;
+ 	struct stat statbuf;
+ 	struct utimbuf utimebuf;
+ 	WAIT_T waiter;
+@@ -379,26 +401,25 @@
+ 	}
+ 
+ 	Set_LineNum(1)
+-
+-	/* ignore the top NHEADER_LINES comment lines since we put them there.
++	/* 
++	 * NHEADER_LINES processing removed for clarity
++	 * (NHEADER_LINES == 0 in all Red Hat crontabs)
+ 	 */
+-	x = 0;
+-	while ((x < NHEADER_LINES) && (EOF != (ch = get_char(f)))) {
+-		if ('#' != ch) {
+-			putc(ch, NewCrontab);
+-			break;
+-		}
+-		while (EOF != (ch = get_char(f)))
+-			if (ch == '\n')
+-				break;
+-		++x;
+-	}
+-
++	
+ 	/* copy the rest of the crontab (if any) to the temp file.
+ 	 */
+ 	if (EOF != ch)
+ 		while (EOF != (ch = get_char(f)))
+ 			putc(ch, NewCrontab);
++
++#ifdef WITH_SELINUX
++	if ( selinux_context )
++	{
++		fprintf(NewCrontab,"SELINUX_ROLE_TYPE=%s\n", selinux_context);
++		selinux_context = 0;
++	}
++#endif
++
+ 	fclose(f);
+ 	if (fflush(NewCrontab) < OK) {
+ 		perror(Filename);
+@@ -610,6 +631,10 @@
+ 	 *fprintf(tmp, "# (%s installed on %-24.24s)\n", Filename, ctime(&now));
+ 	 *fprintf(tmp, "# (Cron version %s -- %s)\n", CRON_VERSION, rcsid);
+ 	 */
++#ifdef WITH_SELINUX
++	if ( selinux_context )
++		fprintf(tmp,"SELINUX_ROLE_TYPE=%s\n", selinux_context);
++#endif
+ 
+ 	/* copy the crontab to the tmp
+ 	 */
+--- usercrond-1.0/funcs.h.selinux_mls	2006-07-20 22:05:13.000000000 -0400
++++ usercrond-1.0/funcs.h	2006-07-20 22:05:13.000000000 -0400
+@@ -88,7 +88,9 @@
+ 
+ int cron_change_user( struct passwd *pw );
+ 
+-int cron_change_selinux_context( user *u );
++int cron_get_job_context( user *u, void *scontextp, void *file_contextp, char **envp );
++
++int cron_change_selinux_context( user *, void *scontext, void *file_context );
+ 
+ int get_security_context(const char *name, 
+ 			 int crontab_fd, 
+--- usercrond-1.0/crontab.1.selinux_mls	2006-07-20 22:05:13.000000000 -0400
++++ usercrond-1.0/crontab.1	2006-07-20 22:05:13.000000000 -0400
+@@ -32,6 +32,7 @@
+ .RB [ -u
+ .IR user ]
+ .RB [ -l " | " -r " | " -e ] [ -i ]
++.RB [ -s ]
+ .SH DESCRIPTION
+ .I Crontab
+ is the program used to install, deinstall or list the tables
+@@ -89,6 +90,13 @@
+ .I -i
+ option modifies the -r option to prompt the user for a 'y/Y' response
+ before actually removing the crontab.
++.PP
++The
++.I -s
++option will append the current SELinux security context string as an
++SELINUX_ROLE_TYPE setting to the crontab file before editing / replacement
++occurs - see the documentation of SELINUX_ROLE_TYPE in 
++.IR crontab(5) .
+ .SH "SEE ALSO"
+ crontab(5), cron(8)
+ .SH FILES
+--- usercrond-1.0/crontab.5.selinux_mls	2006-07-20 22:05:13.000000000 -0400
++++ usercrond-1.0/crontab.5	2006-07-20 22:05:13.000000000 -0400
+@@ -87,6 +87,19 @@
+ setting the CONTENT_TYPE and CONTENT_TRANSFER_ENCODING variables in crontabs,
+ to the correct values of the mail headers of those names.  
+ .PP
++The SELINUX_ROLE_TYPE environment variable provides support for multiple per-job 
++SELinux security contexts in the same crontab.
++By default, cron jobs execute with the default SELinux security context of the 
++user that created the crontab file.
++When using multiple security levels and roles, this may not be sufficient, because
++the same user may be running in a different role or at a different security level.
++You can set SELINUX_ROLE_TYPE to the SELinux security context string specifying
++the SELinux security context in which you want the job to run, and crond will set 
++the execution context of the or jobs to which the setting applies to the specified 
++context.
++See also the 
++.IR crontab(1) -s option.
++.PP
+ The format of a cron command is very much the V7 standard, with a number of
+ upward-compatible extensions.  Each line has five time and date fields,
+ followed by a user name if this is the system crontab file,
+--- usercrond-1.0/security.c.selinux_mls	2006-07-20 22:05:13.000000000 -0400
++++ usercrond-1.0/security.c	2006-07-20 22:15:31.000000000 -0400
+@@ -49,23 +49,49 @@
+ 	      );
+ 	return -1;
+     }
+-    
++
++    *jobenv = build_env( e->envp );
++
++#ifdef WITH_SELINUX
++
++    /* we must get the crontab context BEFORE changing user, else
++     * we'll not be permitted to read the cron spool directory :-)
++     */
++
++    security_context_t scontext=0, file_context=0; 
++
++    if ( cron_get_job_context(u, &scontext, &file_context, *jobenv) < OK )
++    {
++	syslog(LOG_ERR, "CRON (%s) ERROR: failed to get selinux context: %s", 
++	       e->pwd->pw_name, strerror(errno)
++	      );
++	return -1;
++    }
++
++#endif
++
+     if ( cron_change_user( e->pwd ) != 0 )
+     {
+ 	syslog(LOG_INFO, "CRON (%s) ERROR: failed to open PAM security session: %s", 
+ 	       e->pwd->pw_name, strerror(errno)
+ 	      );
+ 	return -1;
+-    }
+-	
+-    if ( cron_change_selinux_context( u ) != 0 )
++    }	
++
++    if ( cron_change_selinux_context( u, scontext, file_context ) != 0 )
+     {
+         syslog(LOG_INFO,"CRON (%s) ERROR: failed to change SELinux context", 
+ 	       e->pwd->pw_name);
++#if WITH_SELINUX
++	if ( file_context )
++		freecon(file_context);
++#endif
+ 	return -1;
+     }
+-
+-    *jobenv = build_env( e->envp );
++#if WITH_SELINUX
++    if ( file_context )
++	freecon(file_context);
++#endif
+ 
+     log_close();
+     openlog(ProgramName, LOG_PID, LOG_CRON);
+@@ -167,23 +193,145 @@
+     return 0;
+ }
+ 
+-int cron_change_selinux_context( user *u )
++static int 
++cron_authorize_context
++( 
++	security_context_t scontext,
++	security_context_t file_context
++)	
+ {
+ #ifdef WITH_SELINUX
+-    if ((is_selinux_enabled() >0) && (u->scontext != 0L)) {
+-	if (setexeccon(u->scontext) < 0) {
+-	    if (security_getenforce() > 0) {
+-		syslog(LOG_INFO,
+-		       "CRON (%s) ERROR:"
+-		       "Could not set exec context to %s for user\n", 
+-		       u->name, u->scontext
+-		      );
++	struct av_decision avd;
++	int retval;
++	/*
++	 * Since crontab files are not directly executed,
++	 * crond must ensure that the crontab file has
++	 * a context that is appropriate for the context of
++	 * the user cron job.  It performs an entrypoint
++	 * permission check for this purpose.
++	 */
++	retval = security_compute_av(scontext,
++				     file_context,
++				     SECCLASS_FILE,
++				     FILE__ENTRYPOINT,
++				     &avd);
++
++	if (retval || ((FILE__ENTRYPOINT & avd.allowed) != FILE__ENTRYPOINT))
++		return 0;
++#endif
++	return 1;
++}
++
++int cron_get_job_context( user *u, void *scontextp, void *file_contextp, char **jobenv )
++{
++#if WITH_SELINUX
++	char *sroletype;
++
++	if ( is_selinux_enabled() <= 0 )
++		return 0;
++	if ( (file_contextp == 0) || (scontextp == 0L) )
+ 		return -1;
+-	    }
++
++	*((security_context_t*)scontextp) = u->scontext;
++	*((void **)file_contextp) = 0L;
++
++	if ( (sroletype = env_get("SELINUX_ROLE_TYPE",jobenv)) != 0L )
++	{
++	        *((security_context_t*)scontextp) = (security_context_t) sroletype;
++		
++		char crontab[MAX_FNAME];
++		if ( strcmp(u->name,"*system*") == 0 )
++			strncpy(crontab, u->tabname, MAX_FNAME);
++		else
++			snprintf(crontab, MAX_FNAME, "%s/%s", CRONDIR, u->tabname);
++
++		if ( getfilecon( crontab, file_contextp ) == -1 )
++		{		
++			if ( security_getenforce() > 0 ) 
++			{
++				log_it(u->name, 
++				       getpid(), "getfilecon FAILED for SELINUX_ROLE_TYPE", 
++				       sroletype
++				      );
++				return -1;
++			} else
++			if ( access( crontab, F_OK ) == 0 )
++				log_it(u->name,
++				       getpid(), 
++				       "getfilecon FAILED but SELinux in permissive mode, continuing "
++				       "- SELINUX_ROLE_TYPE=", sroletype
++				       );
++		}		       
+ 	}
+-    }
+ #endif
+-    return 0;
++	return 0;
++}
++
++int cron_change_selinux_context( user *u, void *scontext, void *file_context )
++{
++#ifdef WITH_SELINUX
++	if ( is_selinux_enabled() <= 0 )
++		return 0;
++
++	if ( scontext == 0L )
++	{
++		if (security_getenforce() > 0) 
++		{
++			log_it( u->name, getpid(), 
++				"NULL security context for user", 
++				""
++			      );
++			return -1;
++		}else
++		{
++			log_it( u->name, getpid(), 
++				"NULL security context for user, "
++				"but SELinux in permissive mode, continuing",
++				""
++				);
++			return 0;
++		}
++	}
++	
++	if ( file_context )
++	{		
++		if ( ! cron_authorize_context( scontext, file_context ) )
++		{
++			if ( security_getenforce() > 0 ) 
++			{
++				syslog(LOG_ERR,
++				       "CRON (%s) ERROR:"
++				       "Unauthorized exec context to SELINUX_ROLE_TYPE %s for user", 
++				       u->name, (char*)scontext
++				      );
++				return -1;
++			} else
++			{
++				syslog(LOG_INFO,
++				       "CRON (%s) WARNING:"
++				       "Unauthorized exec context to SELINUX_ROLE_TYPE %s for user,"
++				       " but SELinux in permissive mode, continuing", 
++				       u->name, (char*)scontext
++				      );
++			}
++		}
++	} 
++
++	if ( setexeccon(scontext) < 0 ) 
++	{
++		if (security_getenforce() > 0) 
++		{
++			syslog(LOG_ERR,
++			       "CRON (%s) ERROR:"
++			       "Could not set exec context to %s for user", 
++			       u->name, (char*)scontext
++			      );
++
++			return -1;
++		}
++	}
++#endif
++	return 0;
+ }
+ 
+ int get_security_context( const char *name, 
+@@ -192,8 +340,7 @@
+ 			  const char *tabname) {
+ #ifdef WITH_SELINUX
+ 	security_context_t scontext=NULL;
+-	security_context_t  file_context=NULL;
+-	struct av_decision avd;
++	security_context_t file_context=NULL;
+ 	int retval=0;
+ 	char *seuser=NULL;
+ 	char *level=NULL;
+@@ -233,28 +380,24 @@
+ 		}
+ 	}
+     
+-	/*
+-	 * Since crontab files are not directly executed,
+-	 * crond must ensure that the crontab file has
+-	 * a context that is appropriate for the context of
+-	 * the user cron job.  It performs an entrypoint
+-	 * permission check for this purpose.
+-	 */
+-	retval = security_compute_av(scontext,
+-				     file_context,
+-				     SECCLASS_FILE,
+-				     FILE__ENTRYPOINT,
+-				     &avd);
+-	freecon(file_context);
+-	if (retval || ((FILE__ENTRYPOINT & avd.allowed) != FILE__ENTRYPOINT)) {
++	if ( ! cron_authorize_context( scontext, file_context ) )
++	{
++		freecon(scontext);
++		freecon(file_context);
+ 		if (security_getenforce() > 0) {
+-			log_it(name, getpid(), "ENTRYPOINT FAILED", tabname);
+-			freecon(scontext);
++			log_it(name, getpid(), "Unauthorized SELinux context", tabname);
+ 			return -1;
+-		} else {
+-			log_it(name, getpid(), "ENTRYPOINT FAILED but SELinux in permissive mode, continuing", tabname);
++		} else
++		{
++			log_it(name, getpid(), 
++			       "Unauthorized SELinux context, but SELinux in permissive mode, continuing",
++			       tabname
++			      );
++			return  0;
+ 		}
+ 	}
++	freecon(file_context);
++
+ 	*rcontext=scontext;
+ #endif
+ 	return 0;

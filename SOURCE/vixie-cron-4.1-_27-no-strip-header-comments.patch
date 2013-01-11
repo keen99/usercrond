@@ -1,0 +1,25 @@
+--- usercrond-1.0/crontab.c.no-strip-header-comments	2004-10-13 10:59:17.000000000 -0400
++++ usercrond-1.0/crontab.c	2004-10-15 10:07:21.775111000 -0400
+@@ -381,10 +381,10 @@
+ 
+ 	Set_LineNum(1)
+ 
+-	/* ignore the top few comments since we probably put them there.
++	/* ignore the top NHEADER_LINES comment lines since we put them there.
+ 	 */
+ 	x = 0;
+-	while (EOF != (ch = get_char(f))) {
++	while ((x < NHEADER_LINES) && (EOF != (ch = get_char(f)))) {
+ 		if ('#' != ch) {
+ 			putc(ch, NewCrontab);
+ 			break;
+@@ -392,8 +392,7 @@
+ 		while (EOF != (ch = get_char(f)))
+ 			if (ch == '\n')
+ 				break;
+-		if (++x >= NHEADER_LINES)
+-			break;
++		++x;
+ 	}
+ 
+ 	/* copy the rest of the crontab (if any) to the temp file.

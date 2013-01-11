@@ -1,0 +1,33 @@
+--- usercrond-1.0/do_command.c.uninitialized	2005-01-11 12:36:55.551558000 -0500
++++ usercrond-1.0/do_command.c	2005-01-11 12:41:10.325529000 -0500
+@@ -446,7 +446,7 @@
+ 		int	ch = getc(in);
+ 
+ 		if (ch != EOF) {
+-			FILE	*mail;
++			FILE	*mail=0L;
+ 			int	bytes = 1;
+ 			int	status = 0;
+ 
+--- usercrond-1.0/pw_dup.c.uninitialized	2004-07-21 09:31:55.000000000 -0400
++++ usercrond-1.0/pw_dup.c	2005-01-11 12:43:26.169549000 -0500
+@@ -47,7 +47,7 @@
+ struct passwd *
+ pw_dup(const struct passwd *pw) {
+ 	char		*cp;
+-	size_t		 nsize, psize, csize, gsize, dsize, ssize, total;
++	size_t		 nsize=0, psize=0, csize=0, gsize=0, dsize=0, ssize=0, total=0;
+ 	struct passwd	*newpw;
+ 
+ 	/* Allocate in one big chunk for easy freeing */
+--- usercrond-1.0/misc.c.uninitialized	2005-01-11 12:36:55.706403000 -0500
++++ usercrond-1.0/misc.c	2005-01-11 12:42:31.208565000 -0500
+@@ -274,7 +274,7 @@
+ 	char buf[3*MAX_FNAME];
+ 	const char *pidfile;
+ 	char *ep;
+-	long otherpid;
++	long otherpid=-1;
+ 	ssize_t num;
+ 
+ 	if (closeflag) {

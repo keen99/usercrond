@@ -1,0 +1,760 @@
+--- usercrond-1.0/popen.c.security	2006-01-10 13:56:39.000000000 -0500
++++ usercrond-1.0/popen.c	2006-01-10 16:56:48.000000000 -0500
+@@ -91,33 +91,6 @@
+ 		return (NULL);
+ 		/* NOTREACHED */
+ 	case 0:				/* child */
+-		if (pw) {
+-#ifdef LOGIN_CAP
+-			if (setusercontext(0, pw, pw->pw_uid, LOGIN_SETALL) < 0) {
+-				fprintf(stderr,
+-				    "setusercontext failed for %s\n",
+-				    pw->pw_name);
+-				_exit(ERROR_EXIT);
+-			}
+-#else
+-			if (setgid(pw->pw_gid) < 0 ||
+-			    initgroups(pw->pw_name, pw->pw_gid) < 0) {
+-				fprintf(stderr,
+-				    "unable to set groups for %s\n",
+-				    pw->pw_name);
+-				_exit(1);
+-			}
+-#if (defined(BSD)) && (BSD >= 199103)
+-			setlogin(pw->pw_name);
+-#endif /* BSD */
+-			if (setuid(pw->pw_uid)) {
+-				fprintf(stderr,
+-				    "unable to set uid for %s\n",
+-				    pw->pw_name);
+-				_exit(1);
+-			}
+-#endif /* LOGIN_CAP */
+-		}
+ 		if (*type == 'r') {
+ 			if (pdes[1] != STDOUT) {
+ 				dup2(pdes[1], STDOUT);
+--- usercrond-1.0/do_command.c.security	2006-01-10 13:56:40.000000000 -0500
++++ usercrond-1.0/do_command.c	2006-01-10 18:12:20.000000000 -0500
+@@ -25,48 +25,9 @@
+ 
+ #include "cron.h"
+ 
+-#ifdef WITH_PAM
+-static pam_handle_t *pamh = NULL;
+-static const struct pam_conv conv = {
+-	NULL
+-};
+-#define PAM_FAIL_CHECK if (retcode != PAM_SUCCESS) { \
+-	fprintf(stderr,"\n%s\n",pam_strerror(pamh, retcode)); \
+-	syslog(LOG_ERR,"%s",pam_strerror(pamh, retcode)); \
+-	pam_close_session(pamh, PAM_SILENT); \
+-	pam_end(pamh, retcode); exit(1); \
+-   }
+-#endif
+-
+ static void		child_process(entry *, user *);
+ static int		safe_p(const char *, const char *);
+ 
+-/* Build up the job environment from the PAM environment plus the
+-   crontab environment */
+-static char ** build_env(char **cronenv)
+-{
+-        char **jobenv = cronenv;
+-#if defined(WITH_PAM)
+-        char **pamenv = pam_getenvlist(pamh);
+-        char *cronvar;
+-        int count = 0;
+-
+-        jobenv = env_copy(pamenv);
+-
+-        /* Now add the cron environment variables. Since env_set()
+-           overwrites existing variables, this will let cron's
+-           environment settings override pam's */
+-
+-        while ((cronvar = cronenv[count++])) {
+-                if (!(jobenv = env_set(jobenv, cronvar))) {
+-                        syslog(LOG_ERR, "Setting Cron environment variable %s failed", cronvar);
+-                        return NULL;
+-                }
+-        }
+-#endif
+-    return jobenv;
+-}
+-
+ void
+ do_command(entry *e, user *u) {
+ 	Debug(DPROC, ("[%ld] do_command(%s, (%s,%ld,%ld))\n",
+@@ -104,10 +65,15 @@
+ 	int stdin_pipe[2], stdout_pipe[2];
+ 	char *input_data, *usernm, *mailto;
+ 	int children = 0; 
+-#if defined(WITH_PAM)
+-	int		retcode = 0;
+-#endif
++        char **jobenv=0L;
+ 
++	/* Set up the Red Hat security context for both mail/minder and job processes:
++         */
++	if ( cron_set_job_security_context( e, u, &jobenv ) != 0 )
++	{
++	    syslog(LOG_INFO, "CRON (%s) ERROR: cannot set security context", e->pwd->pw_name);
++	    exit(ERROR_EXIT);
++	}
+ 
+ 	Debug(DPROC, ("[%ld] child_process('%s')\n", (long)getpid(), e->cmd))
+ 
+@@ -126,7 +92,7 @@
+ 	/* discover some useful and important environment settings
+ 	 */
+ 	usernm = e->pwd->pw_name;
+-	mailto = env_get("MAILTO", e->envp);
++	mailto = env_get("MAILTO", jobenv);
+ 
+ 	/* our parent is watching for our death by catching SIGCHLD.  we
+ 	 * do not care to watch for our children's deaths this way -- we
+@@ -186,31 +152,13 @@
+ 		*p = '\0';
+ 	}
+ 
+-#if defined(WITH_PAM)
+-	retcode = pam_start("crond", usernm, &conv, &pamh);
+-	PAM_FAIL_CHECK;
+-	retcode = pam_set_item(pamh, PAM_TTY, "cron");
+-	PAM_FAIL_CHECK;
+-	retcode = pam_acct_mgmt(pamh, PAM_SILENT);
+-	PAM_FAIL_CHECK;
+-	retcode = pam_open_session(pamh, PAM_SILENT);
+-	PAM_FAIL_CHECK;
+-	retcode = pam_setcred(pamh, PAM_ESTABLISH_CRED | PAM_SILENT);
+-	PAM_FAIL_CHECK;
+-	build_env(e->envp);
+-	log_close(); /* PAM has now re-opened our log to auth.info ! */
+-#endif
+ 
+ 	/* fork again, this time so we can exec the user's command.
+ 	 */
+ 	switch (fork()) {
+ 	case -1:
+ 		log_it("CRON", getpid(), "error", "can't fork");
+-#ifdef WITH_PAM
+-                pam_setcred(pamh, PAM_DELETE_CRED | PAM_SILENT);
+-                pam_close_session(pamh, PAM_SILENT);
+-                pam_end(pamh, PAM_ABORT);
+-#endif
++		cron_close_security_session();
+ 		exit(ERROR_EXIT);
+ 		/*NOTREACHED*/
+ 	case 0:
+@@ -266,78 +214,12 @@
+ 		 */
+ 		(void) signal(SIGCHLD, SIG_DFL);
+ 
+-		/* set our directory, uid and gid.  Set gid first, since once
+-		 * we set uid, we've lost root privledges.
+-		 */
+-#ifdef LOGIN_CAP
+-		{
+-#ifdef BSD_AUTH
+-			auth_session_t *as;
+-#endif
+-			login_cap_t *lc;
+-			char **p;
+-			extern char **environ;
+-
+-			if ((lc = login_getclass(e->pwd->pw_class)) == NULL) {
+-				fprintf(stderr,
+-				    "unable to get login class for %s\n",
+-				    e->pwd->pw_name);
+-				_exit(ERROR_EXIT);
+-			}
+-			if (setusercontext(lc, e->pwd, e->pwd->pw_uid, LOGIN_SETALL) < 0) {
+-				fprintf(stderr,
+-				    "setusercontext failed for %s\n",
+-				    e->pwd->pw_name);
+-				_exit(ERROR_EXIT);
+-			}
+-#ifdef BSD_AUTH
+-			as = auth_open();
+-			if (as == NULL || auth_setpwd(as, e->pwd) != 0) {
+-				fprintf(stderr, "can't malloc\n");
+-				_exit(ERROR_EXIT);
+-			}
+-			if (auth_approval(as, lc, usernm, "cron") <= 0) {
+-				fprintf(stderr, "approval failed for %s\n",
+-				    e->pwd->pw_name);
+-				_exit(ERROR_EXIT);
+-			}
+-			auth_close(as);
+-#endif /* BSD_AUTH */
+-			login_close(lc);
+-
+-			/* If no PATH specified in crontab file but
+-			 * we just added one via login.conf, add it to
+-			 * the crontab environment.
+-			 */
+-			if (env_get("PATH", e->envp) == NULL && environ != NULL) {
+-				for (p = environ; *p; p++) {
+-					if (strncmp(*p, "PATH=", 5) == 0) {
+-						e->envp = env_set(e->envp, *p);
+-						break;
+-					}
+-				}
+-			}
+-		}
+-#else
+-		setgid(e->pwd->pw_gid);
+-		initgroups(usernm, e->pwd->pw_gid);
+-#if (defined(BSD)) && (BSD >= 199103)
+-		setlogin(usernm);
+-#endif /* BSD */
+-		setuid(e->pwd->pw_uid);	/* we aren't root after this... */
+-
+-#endif /* LOGIN_CAP */
+-		if ( chdir(env_get("HOME", e->envp)) == -1 )
+-		{
+-		    log_it("CRON", getpid(), "chdir(HOME) failed:", strerror(errno));
+-		    _exit(ERROR_EXIT);
+-		}
+ 
+ 		/*
+ 		 * Exec the command.
+ 		 */
+ 		{
+-			char	*shell = env_get("SHELL", e->envp);
++			char	*shell = env_get("SHELL", jobenv);
+ 
+ # if DEBUGGING
+ 			if (DebugFlags & DTEST) {
+@@ -349,20 +231,7 @@
+ 			}
+ # endif /*DEBUGGING*/
+ 
+-#ifdef WITH_SELINUX
+-			if ((is_selinux_enabled() >0) && (u->scontext != 0L)) {
+-				if (setexeccon(u->scontext) < 0) {
+-					if (security_getenforce() > 0) {
+-						fprintf(stderr, 
+-							"Could not set exec context to %s for user  %s\n", 
+-							u->scontext,u->name);
+-						_exit(ERROR_EXIT);
+-					}
+-				}
+-			}
+-#endif
+-
+-			execle(shell, shell, "-c", e->cmd, (char *)0, e->envp);
++			execle(shell, shell, "-c", e->cmd, (char *)0, jobenv);
+ 			fprintf(stderr, "execl: couldn't exec `%s'\n", shell);
+ 			perror("execl");
+ 			_exit(ERROR_EXIT);
+@@ -535,7 +404,7 @@
+ 				fprintf(mail, "Date: %s\n",
+ 					arpadate(&StartTime));
+ #endif /*MAIL_DATE*/
+-				for (env = e->envp;  *env;  env++)
++				for (env = jobenv;  *env;  env++)
+ 					fprintf(mail, "X-Cron-Env: <%s>\n",
+ 						*env);
+ 				fprintf(mail, "\n");
+@@ -616,12 +485,8 @@
+ 			Debug(DPROC, (", dumped core"))
+ 		Debug(DPROC, ("\n"))
+ 	}
+-
+-#if defined(WITH_PAM)
+-	pam_setcred(pamh, PAM_DELETE_CRED | PAM_SILENT);
+-	retcode = pam_close_session(pamh, PAM_SILENT);
+-	pam_end(pamh, retcode);
+-#endif
++	cron_close_security_session();
++	env_free(jobenv);
+ }
+ 
+ static int
+--- usercrond-1.0/security.c.security	2006-01-10 18:04:21.000000000 -0500
++++ usercrond-1.0/security.c	2006-01-10 17:35:33.000000000 -0500
+@@ -0,0 +1,278 @@
++/* security.c 
++ *
++ * Implement Red Hat crond security context transitions
++ *
++ * Jason Vas Dias <jvdias@redhat.com> January 2006
++ *
++ * Copyright(C) Red Hat Inc., 2006
++ *
++ * Permission to use, copy, modify, and distribute this software for any
++ * purpose with or without fee is hereby granted, provided that the above
++ * copyright notice and this permission notice appear in all copies.
++ *
++ * THE SOFTWARE IS PROVIDED "AS IS" AND ISC DISCLAIMS ALL WARRANTIES
++ * WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
++ * MERCHANTABILITY AND FITNESS.  IN NO EVENT SHALL ISC BE LIABLE FOR
++ * ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
++ * WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
++ * ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT
++ * OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
++ */
++
++#include "cron.h"
++
++#ifdef WITH_SELINUX
++#include <selinux/selinux.h>
++#include <selinux/flask.h>
++#include <selinux/av_permissions.h>
++#include <selinux/get_context_list.h>
++#endif
++
++static char ** build_env(char **cronenv);
++
++int cron_set_job_security_context( entry *e, user *u, char ***jobenv )
++{
++    if ( cron_open_security_session( e->pwd ) != 0 )
++    {
++	syslog(LOG_INFO, "CRON (%s) ERROR: failed to open PAM security session: %s", 
++	       e->pwd->pw_name, strerror(errno)
++	      );
++	return -1;
++    }
++    
++    if ( cron_change_user( e->pwd ) != 0 )
++    {
++	syslog(LOG_INFO, "CRON (%s) ERROR: failed to open PAM security session: %s", 
++	       e->pwd->pw_name, strerror(errno)
++	      );
++	return -1;
++    }
++	
++    if ( cron_change_selinux_context( u ) != 0 )
++    {
++        syslog(LOG_INFO,"CRON (%s) ERROR: failed to change SELinux context", 
++	       e->pwd->pw_name);
++	return -1;
++    }
++
++    *jobenv = build_env( e->envp );
++
++    if ( chdir(env_get("HOME", *jobenv)) == -1 )
++    {
++	log_it("CRON", getpid(), "chdir(HOME) failed:", strerror(errno));
++	return -1;
++    }
++
++    return 0;
++}
++
++#ifdef WITH_PAM
++static pam_handle_t *pamh = NULL;
++static const struct pam_conv conv = {
++    NULL
++};
++#define PAM_FAIL_CHECK if (retcode != PAM_SUCCESS) {		\
++	fprintf(stderr,"\n%s\n",pam_strerror(pamh, retcode));	\
++	syslog(LOG_ERR,"%s",pam_strerror(pamh, retcode));	\
++	pam_close_session(pamh, PAM_SILENT);			\
++	pam_end(pamh, retcode);					\
++	return(retcode);					\
++   }
++#endif
++
++int cron_open_security_session( struct passwd *pw )
++{
++    int	retcode = 0;
++
++#if defined(WITH_PAM)
++    retcode = pam_start("crond", pw->pw_name, &conv, &pamh);
++    PAM_FAIL_CHECK;
++    retcode = pam_set_item(pamh, PAM_TTY, "cron");
++    PAM_FAIL_CHECK;
++    retcode = pam_acct_mgmt(pamh, PAM_SILENT);
++    PAM_FAIL_CHECK;
++    retcode = pam_open_session(pamh, PAM_SILENT);
++    PAM_FAIL_CHECK;
++    retcode = pam_setcred(pamh, PAM_ESTABLISH_CRED | PAM_SILENT);
++    PAM_FAIL_CHECK;
++    log_close(); /* PAM has now re-opened our log to auth.info ! */
++#endif
++
++    return retcode;
++}
++
++void cron_close_security_session( void )
++{
++#if defined(WITH_PAM)
++    pam_setcred(pamh, PAM_DELETE_CRED | PAM_SILENT);
++    pam_close_session(pamh, PAM_SILENT);
++    pam_end(pamh, PAM_ABORT);
++#endif
++}
++
++int cron_change_user( struct passwd *pw )
++{    	
++    /* set our directory, uid and gid.  Set gid first, since once
++     * we set uid, we've lost root privledges.
++     */
++    if ( setgid( pw->pw_gid ) != 0 )
++    {
++	log_it("CRON", getpid(), "setgid failed:", strerror(errno));
++	return -1;
++    }
++
++    if ( initgroups( pw->pw_name, pw->pw_gid ) != 0 )
++    {
++	log_it("CRON", getpid(), "initgroups failed:", strerror(errno));
++	return -1;	
++    }
++
++    if ( setuid( pw->pw_uid ) != 0 )
++    {
++	log_it("CRON", getpid(), "setuid failed:", strerror(errno));
++	return -1;
++    }
++    
++    return 0;
++}
++
++int cron_change_selinux_context( user *u )
++{
++#ifdef WITH_SELINUX
++    if ((is_selinux_enabled() >0) && (u->scontext != 0L)) {
++	if (setexeccon(u->scontext) < 0) {
++	    if (security_getenforce() > 0) {
++		syslog(LOG_INFO,
++		       "CRON (%s) ERROR:"
++		       "Could not set exec context to %s for user\n", 
++		       u->name, u->scontext
++		      );
++		return -1;
++	    }
++	}
++    }
++#endif
++    return 0;
++}
++
++int get_security_context( const char *name, 
++			  int crontab_fd, 
++			  security_context_t *rcontext, 
++			  const char *tabname) {
++	security_context_t scontext=NULL;
++	security_context_t  file_context=NULL;
++	struct av_decision avd;
++	int retval=0;
++	char *seuser=NULL;
++	char *level=NULL;
++
++	*rcontext = NULL;
++
++#ifdef WITH_SELINUX
++
++	if (is_selinux_enabled() <= 0) 
++	    return 0;
++
++	if (getseuserbyname(name, &seuser, &level) == 0) {
++		retval=get_default_context_with_level(seuser, level, NULL, &scontext);
++		free(seuser);
++		free(level);
++		if (retval) {
++			if (security_getenforce() > 0) {
++				log_it(name, getpid(), "No SELinux security context",tabname);
++				return -1;
++			} else {
++				log_it(name, getpid(), "No security context but SELinux in permissive mode, continuing",tabname);
++				return 0;
++			}
++		}
++	} else {
++		log_it(name, getpid(), "getseusername FAILED", name);
++		return (security_getenforce() > 0);
++	}
++	
++	if (fgetfilecon(crontab_fd, &file_context) < OK) {
++		if (security_getenforce() > 0) {
++			log_it(name, getpid(), "getfilecon FAILED", tabname);
++			freecon(scontext);
++			return -1;
++		} else {
++			log_it(name, getpid(), "getfilecon FAILED but SELinux in permissive mode, continuing", tabname);
++			*rcontext=scontext;
++			return 0;
++		}
++	}
++    
++	/*
++	 * Since crontab files are not directly executed,
++	 * crond must ensure that the crontab file has
++	 * a context that is appropriate for the context of
++	 * the user cron job.  It performs an entrypoint
++	 * permission check for this purpose.
++	 */
++	retval = security_compute_av(scontext,
++				     file_context,
++				     SECCLASS_FILE,
++				     FILE__ENTRYPOINT,
++				     &avd);
++	freecon(file_context);
++	if (retval || ((FILE__ENTRYPOINT & avd.allowed) != FILE__ENTRYPOINT)) {
++		if (security_getenforce() > 0) {
++			log_it(name, getpid(), "ENTRYPOINT FAILED", tabname);
++			freecon(scontext);
++			return -1;
++		} else {
++			log_it(name, getpid(), "ENTRYPOINT FAILED but SELinux in permissive mode, continuing", tabname);
++		}
++	}
++	*rcontext=scontext;
++#endif
++	return 0;
++}
++
++void free_security_context( security_context_t *scontext )
++{
++#ifdef WITH_SELINUX
++    if( *scontext != NULL )
++    {
++	freecon(*scontext);
++	*scontext=0L;
++    }	    
++#endif	
++}
++
++int crontab_security_access(void)
++{
++#ifdef WITH_SELINUX
++    if (is_selinux_enabled() > 0)
++	if (selinux_check_passwd_access(PASSWD__CRONTAB)!=0)
++	    return -1;
++#endif
++    return 0;
++}
++
++/* Build up the job environment from the PAM environment plus the
++   crontab environment */
++static char ** build_env(char **cronenv)
++{
++    char **jobenv = cronenv;
++
++    char **pamenv = pam_getenvlist(pamh);
++    char *cronvar;
++    int count = 0;
++
++    jobenv = env_copy(pamenv);
++
++        /* Now add the cron environment variables. Since env_set()
++           overwrites existing variables, this will let cron's
++           environment settings override pam's */
++
++    while ((cronvar = cronenv[count++])) {
++	if (!(jobenv = env_set(jobenv, cronvar))) {
++	    syslog(LOG_ERR, "Setting Cron environment variable %s failed", cronvar);
++	    return NULL;
++	}
++    }
++
++    return jobenv;
++}
+--- usercrond-1.0/user.c.security	2006-01-10 13:56:40.000000000 -0500
++++ usercrond-1.0/user.c	2006-01-10 17:35:14.000000000 -0500
+@@ -26,85 +26,8 @@
+ /* vix 26jan87 [log is in RCS file]
+  */
+ 
+-#ifdef WITH_SELINUX
+-#include <selinux/selinux.h>
+-#include <selinux/flask.h>
+-#include <selinux/av_permissions.h>
+-#include <selinux/get_context_list.h>
+-#endif
+-
+ #include "cron.h"
+ 
+-#ifdef WITH_SELINUX
+-static	int get_security_context(const char *name, 
+-				 int crontab_fd, 
+-				 security_context_t *rcontext, 
+-				 const char *tabname) {
+-	security_context_t scontext=NULL;
+-	security_context_t  file_context=NULL;
+-	struct av_decision avd;
+-	int retval=0;
+-	char *seuser=NULL;
+-	char *level=NULL;
+-	*rcontext = NULL;
+-
+-	if (getseuserbyname(name, &seuser, &level) == 0) {
+-		retval=get_default_context_with_level(seuser, level, NULL, &scontext);
+-		free(seuser);
+-		free(level);
+-		if (retval) {
+-			if (security_getenforce() > 0) {
+-				log_it(name, getpid(), "No SELinux security context",tabname);
+-				return -1;
+-			} else {
+-				log_it(name, getpid(), "No security context but SELinux in permissive mode, continuing",tabname);
+-				return 0;
+-			}
+-		}
+-	} else {
+-		log_it(name, getpid(), "getseusername FAILED", name);
+-		return (security_getenforce() > 0);
+-	}
+-	
+-	if (fgetfilecon(crontab_fd, &file_context) < OK) {
+-		if (security_getenforce() > 0) {
+-			log_it(name, getpid(), "getfilecon FAILED", tabname);
+-			freecon(scontext);
+-			return -1;
+-		} else {
+-			log_it(name, getpid(), "getfilecon FAILED but SELinux in permissive mode, continuing", tabname);
+-			*rcontext=scontext;
+-			return 0;
+-		}
+-	}
+-    
+-	/*
+-	 * Since crontab files are not directly executed,
+-	 * crond must ensure that the crontab file has
+-	 * a context that is appropriate for the context of
+-	 * the user cron job.  It performs an entrypoint
+-	 * permission check for this purpose.
+-	 */
+-	retval = security_compute_av(scontext,
+-				     file_context,
+-				     SECCLASS_FILE,
+-				     FILE__ENTRYPOINT,
+-				     &avd);
+-	freecon(file_context);
+-	if (retval || ((FILE__ENTRYPOINT & avd.allowed) != FILE__ENTRYPOINT)) {
+-		if (security_getenforce() > 0) {
+-			log_it(name, getpid(), "ENTRYPOINT FAILED", tabname);
+-			freecon(scontext);
+-			return -1;
+-		} else {
+-			log_it(name, getpid(), "ENTRYPOINT FAILED but SELinux in permissive mode, continuing", tabname);
+-		}
+-	}
+-	*rcontext=scontext;
+-	return 0;
+-}
+-#endif
+-
+ void
+ free_user(user *u) {
+ 	entry *e, *ne;
+@@ -115,10 +38,7 @@
+ 		ne = e->next;
+ 		free_entry(e);
+ 	}
+-#ifdef WITH_SELINUX
+-	if( u->scontext != NULL )
+-	    freecon(u->scontext);
+-#endif	
++	free_security_context(&(u->scontext));
+ 	free(u);
+ }
+ 
+@@ -164,23 +84,14 @@
+ 		return (NULL);
+ 	}
+ 
+-#ifdef WITH_SELINUX
+-	if (is_selinux_enabled() > 0) {
+-		const char *sname=uname;
+-		if (pw==NULL) {
+-			sname="system_u";
+-		}
+-
+-		if (get_security_context(sname, crontab_fd, 
+-					 &u->scontext, tabname) != 0) {
+-			free_user(u);
+-			u = NULL;
+-			goto done;
+-		}
+-	}else
+-	    u->scontext = NULL;
+-#endif
+-
++	if (get_security_context(pw == NULL ? "system_u" : uname, 
++				 crontab_fd, 
++				 &u->scontext, tabname) != 0) {
++	    free_user(u);
++	    u = NULL;
++	    goto done;
++	}
++	
+ 	/* load the crontab
+ 	 */
+ 	while ((status = load_env(envstr, file)) >= OK) {
+--- usercrond-1.0/funcs.h.security	2006-01-10 13:56:39.000000000 -0500
++++ usercrond-1.0/funcs.h	2006-01-10 17:35:00.000000000 -0500
+@@ -77,3 +77,25 @@
+ #ifndef HAVE_TM_GMTOFF
+ long		get_gmtoff(time_t *, struct tm *);
+ #endif
++
++/* Red Hat security stuff (security.c): 
++ */
++int cron_set_job_security_context( entry *e, user *u, char ***jobenvp );
++
++int cron_open_security_session( struct passwd *pw );
++
++void cron_close_security_session( void );
++
++int cron_change_user( struct passwd *pw );
++
++int cron_change_selinux_context( user *u );
++
++int get_security_context(const char *name, 
++			 int crontab_fd, 
++			 security_context_t *rcontext, 
++			 const char *tabname
++                        );
++
++void free_security_context( security_context_t *scontext );
++
++int crontab_security_access(void);
+--- usercrond-1.0/crontab.c.security	2006-01-10 13:56:40.000000000 -0500
++++ usercrond-1.0/crontab.c	2006-01-10 17:26:58.000000000 -0500
+@@ -163,15 +163,14 @@
+ 					"must be privileged to use -u\n");
+ 				exit(ERROR_EXIT);
+ 			}
+-#ifdef WITH_SELINUX
+-			if (is_selinux_enabled() > 0) {
+-				if (selinux_check_passwd_access(PASSWD__CRONTAB)!=0) {
+-					fprintf(stderr,
+-						"Access denied by SELinux, must be privileged to use -u\n");
+-					exit(ERROR_EXIT);
+-				}
++			
++			if( crontab_security_access() != 0 )
++			{
++			        fprintf(stderr,
++				    "Access denied by SELinux, must be privileged to use -u\n");
++			        exit(ERROR_EXIT);
+ 			}
+-#endif
++
+ 			if (!(pw = getpwnam(optarg))) {
+ 				fprintf(stderr, "%s:  user `%s' unknown\n",
+ 					ProgramName, optarg);
+--- usercrond-1.0/Makefile.security	2006-01-10 13:56:40.000000000 -0500
++++ usercrond-1.0/Makefile	2006-01-10 17:31:13.000000000 -0500
+@@ -88,14 +88,14 @@
+ HEADERS		=	bitstring.h cron.h config.h pathnames.h externs.h \
+ 			macros.h structs.h funcs.h globals.h
+ SOURCES		=	cron.c crontab.c database.c do_command.c entry.c \
+-			env.c job.c user.c popen.c misc.c pw_dup.c
++			env.c job.c user.c popen.c misc.c pw_dup.c security.c
+ SHAR_SOURCE	=	$(INFOS) $(MANPAGES) Makefile $(HEADERS) $(SOURCES)
+ LINT_CRON	=	cron.c database.c user.c entry.c \
+ 			misc.c job.c do_command.c env.c popen.c pw_dup.c
+ LINT_CRONTAB	=	crontab.c misc.c entry.c env.c
+ CRON_OBJ	=	cron.o database.o user.o entry.o job.o do_command.o \
+-			misc.o env.o popen.o pw_dup.o
+-CRONTAB_OBJ	=	crontab.o misc.o entry.o env.o pw_dup.o
++			misc.o env.o popen.o pw_dup.o security.o
++CRONTAB_OBJ	=	crontab.o misc.o entry.o env.o pw_dup.o security.o
+ 
+ all		:	cron crontab
+ 

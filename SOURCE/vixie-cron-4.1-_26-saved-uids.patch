@@ -1,0 +1,11 @@
+--- usercrond-1.0/misc.c.saved_uids	2004-09-29 11:42:33.000000000 -0400
++++ usercrond-1.0/misc.c	2004-09-30 09:55:27.968181000 -0400
+@@ -696,7 +696,7 @@
+ }
+ 
+ int swap_uids_back(void) {
+-	return ((setegid(getgid()) || seteuid(getuid())) ? -1 : 0);
++	return ((setegid(save_egid) || seteuid(save_euid)) ? -1 : 0);
+ }
+ 
+ #else /*HAVE_SAVED_UIDS*/

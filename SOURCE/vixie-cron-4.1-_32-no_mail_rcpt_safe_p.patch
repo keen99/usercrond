@@ -1,0 +1,37 @@
+--- usercrond-1.0/do_command.c.no_mail_rcpt_safe_p	2005-02-11 15:25:56.261994000 -0500
++++ usercrond-1.0/do_command.c	2005-02-11 16:04:34.519972000 -0500
+@@ -478,7 +478,11 @@
+ 			 * up the mail command and subjects and stuff...
+ 			 */
+ 
+-			if (mailto && safe_p(usernm, mailto)) {
++			if (mailto 
++			    &&( (ValidateMailRcpts==0) || safe_p(usernm, mailto) )
++                            /* Why validate the mail recipient name ? All mailers do this anyway... JVD */
++			   )
++			{ 
+ 				char	**env;
+ 				char	mailcmd[MAX_COMMAND];
+ 				char	hostname[MAXHOSTNAMELEN];
+--- usercrond-1.0/cron.c.no_mail_rcpt_safe_p	2005-02-11 15:25:56.157099000 -0500
++++ usercrond-1.0/cron.c	2005-02-11 16:01:12.732961000 -0500
+@@ -95,6 +95,9 @@
+ 		log_it("CRON", getpid(), "DEATH", "can't malloc");
+ 		exit(1);
+ 	}
++	
++	if ( getenv("CRON_VALIDATE_MAILRCPTS") != 0L )
++	    ValidateMailRcpts=1;
+ 
+ 	/* if there are no debug flags turned on, fork as a daemon should.
+ 	 */
+--- usercrond-1.0/globals.h.no_mail_rcpt_safe_p	2005-02-11 15:25:56.184073000 -0500
++++ usercrond-1.0/globals.h	2005-02-11 15:25:56.300955000 -0500
+@@ -64,6 +64,7 @@
+ XTRN time_t	StartTime INIT(0);
+ XTRN int	NoFork INIT(0);
+ XTRN int        PermitAnyCrontab INIT(0);
++XTRN int        ValidateMailRcpts INIT(0);
+ 
+ #if DEBUGGING
+ XTRN int	DebugFlags INIT(0);

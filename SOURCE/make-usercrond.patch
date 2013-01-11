@@ -1,0 +1,1794 @@
+diff -rupN usercrond-1.0-control/cron.c usercrond-1.0/cron.c
+--- usercrond-1.0-control/cron.c	2012-04-04 20:51:27.000000000 +0000
++++ usercrond-1.0/cron.c	2012-04-12 18:52:55.000000000 +0000
+@@ -413,7 +413,7 @@ sigchld_handler(int x) {
+ 
+ static void
+ quit(int x) {
+-	(void) unlink(_PATH_CRON_PID);
++	(void) unlink(CronPid);
+ 	_exit(0);
+ }
+ 
+@@ -450,7 +450,18 @@ static void
+ parse_args(int argc, char *argv[]) {
+ 	int argch;
+ 
+-	while (-1 != (argch = getopt(argc, argv, "npx:m:"))) {
++#if defined(CRONDIR)
++#define xstr(a) str(a)
++#define str(a) #a
++	strcpy(CronDir, xstr(CRONDIR));
++#else
++	strcpy(CronDir, getenv("HOME"));
++	strcat(CronDir, "/cron.d");
++#endif
++	strcpy(CronPid, getenv("HOME"));
++	strcat(CronPid, "/");
++	strcat(CronPid, PIDFILE);
++	while (-1 != (argch = getopt(argc, argv, "npx:m:d:"))) {
+ 		switch (argch) {
+ 		default:
+ 			usage();
+@@ -467,6 +478,9 @@ parse_args(int argc, char *argv[]) {
+ 		case 'm':
+ 			strncpy(MailCmd, optarg, MAX_COMMAND);
+ 			break;
++		case 'd':
++			strncpy(CronDir, optarg, MAX_COMMAND);
++			break;
+ 		}
+ 	}
+ }
+diff -rupN usercrond-1.0-control/crontab.1 usercrond-1.0/crontab.1
+--- usercrond-1.0-control/crontab.1	2012-04-04 20:51:27.000000000 +0000
++++ usercrond-1.0/crontab.1	1970-01-01 00:00:00.000000000 +0000
+@@ -1,118 +0,0 @@
+-.\"/* Copyright 1988,1990,1993 by Paul Vixie
+-.\" * All rights reserved
+-.\" */
+-.\" 
+-.\" Copyright (c) 2004 by Internet Systems Consortium, Inc. ("ISC")
+-.\" Copyright (c) 1997,2000 by Internet Software Consortium, Inc.
+-.\"
+-.\" Permission to use, copy, modify, and distribute this software for any
+-.\" purpose with or without fee is hereby granted, provided that the above
+-.\" copyright notice and this permission notice appear in all copies.
+-.\"
+-.\" THE SOFTWARE IS PROVIDED "AS IS" AND ISC DISCLAIMS ALL WARRANTIES
+-.\" WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
+-.\" MERCHANTABILITY AND FITNESS.  IN NO EVENT SHALL ISC BE LIABLE FOR
+-.\" ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
+-.\" WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
+-.\" ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT
+-.\" OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+-.\"
+-.\" $Id: crontab.1,v 1.7 2004/01/23 19:03:32 vixie Exp $
+-.\"
+-.TH CRONTAB 1 "16 Januar 2007"
+-.UC 4
+-.SH NAME
+-crontab \- maintain crontab files for individual users (ISC Cron V4.1)
+-.SH SYNOPSIS
+-.B crontab
+-.RB [ -u
+-.IR user ] " file"
+-.br
+-.B crontab
+-.RB [ -u
+-.IR user ]
+-.RB [ -l " | " -r " | " -e ]\ [ -i ]
+-.RB [ -s ]
+-.SH DESCRIPTION
+-.I Crontab
+-is the program used to install, deinstall or list the tables
+-used to drive the
+-.BR cron (8)
+-daemon in ISC Cron.  Each user can have their own crontab, and though these are files in 
+-.I /var/spool/
+-, they are not intended to be edited directly. For SELinux in mls mode can be even 
+-more crontabs - for each range. For more see
+-.BR selinux (8).
+-.PP
+-If the
+-.I cron.allow
+-file exists, then you must be listed therein in order to be allowed to use
+-this command.  If the
+-.I cron.allow
+-file does not exist but the
+-.I cron.deny
+-file does exist, then you must \fInot\fR be listed in the
+-.I cron.deny
+-file in order to use this command.  If neither of these files exists,
+-only the super user will be allowed to use this command.
+-.PP
+-.SH "OPTIONS"
+-.TP
+-.B "\-u"
+-It specifies the name of the user whose crontab is to be tweaked.  If this option 
+-is not given,
+-.I crontab
+-examines "your" crontab, i.e., the crontab of the person executing the
+-command.  Note that
+-.BR su (8)
+-can confuse
+-.I crontab
+-and that if you are running inside of
+-.BR su (8)
+-you should always use the
+-.B -u
+-option for safety's sake.
+-The first form of this command is used to install a new crontab from some
+-named file or standard input if the pseudo-filename "-" is given.
+-.TP
+-.B "\-l"
+-The current crontab will be displayed on standard output.
+-.TP
+-.B "\-r"
+-The current crontab will be be removed.
+-.TP
+-.B "\-e"
+-This option is used to edit the current crontab using the editor specified by
+-the \s-1VISUAL\s+1 or \s-1EDITOR\s+1 environment variables.  After you exit
+-from the editor, the modified crontab will be installed automatically.
+-.TP
+-.B "\-i"
+-This option modifies the 
+-.B "\-r"
+-option to prompt the user for a 'y/Y' response
+-before actually removing the crontab.
+-.TP
+-.B "\-s"
+-It will append the current SELinux security context string as an
+-MLS_LEVEL setting to the crontab file before editing / replacement
+-occurs - see the documentation of MLS_LEVEL in 
+-.BR crontab(5)\.
+-.SH "SEE ALSO"
+-crontab(5), cron(8)
+-.SH FILES
+-.nf
+-/etc/cron.allow
+-/etc/cron.deny
+-.fi
+-.SH STANDARDS
+-The
+-.I crontab
+-command conforms to IEEE Std1003.2-1992 (``POSIX'').  This new command syntax
+-differs from previous versions of Vixie Cron, as well as from the classic
+-SVR3 syntax.
+-.SH DIAGNOSTICS
+-A fairly informative usage message appears if you run it with a bad command
+-line.
+-.SH AUTHOR
+-.nf
+-Paul Vixie <vixie@isc.org>
+diff -rupN usercrond-1.0-control/crontab.5 usercrond-1.0/crontab.5
+--- usercrond-1.0-control/crontab.5	2012-04-04 20:51:27.000000000 +0000
++++ usercrond-1.0/crontab.5	1970-01-01 00:00:00.000000000 +0000
+@@ -1,268 +0,0 @@
+-.\"/* Copyright 1988,1990,1993,1994 by Paul Vixie
+-.\" * All rights reserved
+-.\" */
+-.\" 
+-.\" Copyright (c) 2004 by Internet Systems Consortium, Inc. ("ISC")
+-.\" Copyright (c) 1997,2000 by Internet Software Consortium, Inc.
+-.\"
+-.\" Permission to use, copy, modify, and distribute this software for any
+-.\" purpose with or without fee is hereby granted, provided that the above
+-.\" copyright notice and this permission notice appear in all copies.
+-.\"
+-.\" THE SOFTWARE IS PROVIDED "AS IS" AND ISC DISCLAIMS ALL WARRANTIES
+-.\" WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
+-.\" MERCHANTABILITY AND FITNESS.  IN NO EVENT SHALL ISC BE LIABLE FOR
+-.\" ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
+-.\" WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
+-.\" ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT
+-.\" OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+-.\"
+-.\" $Id: crontab.5,v 1.6 2004/01/23 19:03:33 vixie Exp $
+-.\" 
+-.TH CRONTAB 5 "16 January 2007"
+-.UC 4
+-.SH NAME
+-crontab \- tables for driving cron (ISC Cron V4.1)
+-.SH DESCRIPTION
+-A
+-.I crontab
+-file contains instructions to the
+-.BR cron (8)
+-daemon of the general form: "run this command at this time on this date".
+-Each user has their own crontab, and commands in any given crontab will be
+-executed as the user who owns the crontab.  Uucp and News will usually have
+-their own crontabs, eliminating the need for explicitly running
+-.BR su (1)
+-as part of a cron command.
+-.PP
+-Blank lines and leading spaces and tabs are ignored.  Lines whose first
+-non-space character is a pound-sign (#) are comments, and are ignored.
+-Note that comments are not allowed on the same line as cron commands, since
+-they will be taken to be part of the command.  Similarly, comments are not
+-allowed on the same line as environment variable settings.
+-.PP
+-An active line in a crontab will be either an environment setting or a cron
+-command.  An environment setting is of the form,
+-.PP
+-    name = value
+-.PP
+-where the spaces around the equal-sign (=) are optional, and any subsequent
+-non-leading spaces in
+-.I value
+-will be part of the value assigned to
+-.IR name .
+-The
+-.I value
+-string may be placed in quotes (single or double, but matching) to preserve
+-leading or trailing blanks.
+-.PP
+-Several environment variables are set up
+-automatically by the
+-.BR cron (8)
+-daemon.
+-SHELL is set to /bin/sh, and LOGNAME and HOME are set from the /etc/passwd 
+-line of the crontab\'s owner.
+-HOME and SHELL may be overridden by settings in the crontab; LOGNAME may not.
+-.PP
+-(Another note: the LOGNAME variable is sometimes called USER on BSD systems...
+-on these systems, USER will be set also.)
+-.PP
+-In addition to LOGNAME, HOME, and SHELL,
+-.BR cron (8)
+-will look at MAILTO if it has any reason to send mail as a result of running
+-commands in "this" crontab.  If MAILTO is defined (and non-empty), mail is
+-sent to the user so named.  If MAILTO is defined but empty (MAILTO=""), no
+-mail will be sent.  Otherwise mail is sent to the owner of the crontab.  This
+-option is useful if you decide on /bin/mail instead of /usr/lib/sendmail as
+-your mailer when you install cron -- /bin/mail doesn\'t do aliasing, and UUCP
+-usually doesn\'t read its mail.
+-.PP
+-By default, cron will send mail using the mail 'Content-Type:' header of 'text/plain' with the 'charset=' parameter set to the charmap / codeset of the locale in which 
+-.BR crond (8)
+-is started up - ie. either the default system locale, if no LC_* environment
+-variables are set, or the locale specified by the LC_* environment variables
+-(see 
+-.BR locale (7)).
+-You can use different character encodings for mailed cron job output by 
+-setting the CONTENT_TYPE and CONTENT_TRANSFER_ENCODING variables in crontabs,
+-to the correct values of the mail headers of those names.  
+-.PP
+-The MLS_LEVEL environment variable provides support for multiple per-job 
+-SELinux security contexts in the same crontab.
+-By default, cron jobs execute with the default SELinux security context of the 
+-user that created the crontab file.
+-When using multiple security levels and roles, this may not be sufficient, because
+-the same user may be running in a different role or at a different security level.
+-For more about roles and SELinux MLS/MCS see 
+-.BR selinux (8) 
+-and undermentioned crontab example.
+-You can set MLS_LEVEL to the SELinux security context string specifying
+-the SELinux security context in which you want the job to run, and crond will set 
+-the execution context of the or jobs to which the setting applies to the specified 
+-context.
+-See also the 
+-.BR crontab(1)\ -s\ option.
+-.PP
+-The format of a cron command is very much the V7 standard, with a number of
+-upward-compatible extensions.  Each line has five time and date fields,
+-followed by a user name if this is the system crontab file,
+-followed by a command.  Commands are executed by
+-.BR cron (8)
+-when the minute, hour, and month of year fields match the current time,
+-.I and
+-at least one of the two day fields (day of month, or day of week)
+-match the current time (see "Note" below).
+-Note that this means that non-existent times, such as "missing hours"
+-during daylight savings conversion, will never match, causing jobs
+-scheduled during the "missing times" not to be run.  Similarly, times
+-that occur more than once (again, during daylight savings conversion)
+-will cause matching jobs to be run twice.
+-.PP
+-.BR cron (8)
+-examines cron entries once every minute.
+-.PP
+-The time and date fields are:
+-.IP
+-.ta 1.5i
+-field	allowed values
+-.br
+------	--------------
+-.br
+-minute	0-59
+-.br
+-hour	0-23
+-.br
+-day of month	1-31
+-.br
+-month	1-12 (or names, see below)
+-.br
+-day of week	0-7 (0 or 7 is Sun, or use names)
+-.br
+-.PP
+-A field may be an asterisk (*), which always stands for "first\-last".
+-.PP
+-Ranges of numbers are allowed.  Ranges are two numbers separated
+-with a hyphen.  The specified range is inclusive.  For example,
+-8-11 for an "hours" entry specifies execution at hours 8, 9, 10
+-and 11.
+-.PP
+-Lists are allowed.  A list is a set of numbers (or ranges)
+-separated by commas.  Examples: "1,2,5,9", "0-4,8-12".
+-.PP
+-Step values can be used in conjunction with ranges.  Following
+-a range with "<number>" specifies skips of the number's value
+-through the range.  For example, "0-23/2" can be used in the hours
+-field to specify command execution every other hour (the alternative
+-in the V7 standard is "0,2,4,6,8,10,12,14,16,18,20,22").  Steps are
+-also permitted after an asterisk, so if you want to say "every two
+-hours", just use "*/2".
+-.PP
+-Names can also be used for the "month" and "day of week"
+-fields.  Use the first three letters of the particular
+-day or month (case doesn't matter).  Ranges or
+-lists of names are not allowed.
+-.PP
+-The "sixth" field (the rest of the line) specifies the command to be
+-run.
+-The entire command portion of the line, up to a newline or %
+-character, will be executed by /bin/sh or by the shell
+-specified in the SHELL variable of the cronfile.
+-Percent-signs (%) in the command, unless escaped with backslash
+-(\\), will be changed into newline characters, and all data
+-after the first % will be sent to the command as standard
+-input.
+-.PP
+-Note: The day of a command's execution can be specified by two
+-fields \(em day of month, and day of week.  If both fields are
+-restricted (ie, aren't *), the command will be run when
+-.I either
+-field matches the current time.  For example,
+-.br
+-"30 4 1,15 * 5"
+-would cause a command to be run at 4:30 am on the 1st and 15th of each
+-month, plus every Friday.
+-.SH EXAMPLE CRON FILE                                                                                                         
+-.nf                                                                                                                           
+-# use /bin/sh to run commands, no matter what /etc/passwd says                                                                
+-SHELL=/bin/sh                                                                                                                 
+-# mail any output to `paul', no matter whose crontab this is                                                                  
+-MAILTO=paul                                                                                                                   
+-#                                                                                                                             
+-# run five minutes after midnight, every day                                                                                  
+-5 0 * * *       $HOME/bin/daily.job >> $HOME/tmp/out 2>&1                                                                     
+-# run at 2:15pm on the first of every month -- output mailed to paul                                                          
+-15 14 1 * *     $HOME/bin/monthly                                                                                             
+-# run at 10 pm on weekdays, annoy Joe                                                                                         
+-0 22 * * 1-5    mail -s "It's 10pm" joe%Joe,%%Where are your kids?%                                                           
+-23 0-23/2 * * * echo "run 23 minutes after midn, 2am, 4am ..., everyday"                                                      
+-5 4 * * sun     echo "run at 5 after 4 every sunday"                                                                          
+-.fi     
+-.SH SELinux with multi level security (MLS)
+-In crontab is important specified security level by \fIcrontab\ -s\fR or specifying 
+-the required level on the first line of the crontab. Each level is specified 
+-in \fI/etc/selinux/targeted/seusers\fR. For using crontab in MLS mode is really important:
+-.br 
+-- check/change actual role, 
+-.br
+-- set correct \fIrole for directory\fR, which is used for input/output.
+-.SH EXAMPLE FOR SELINUX MLS
+-.nf
+-# login as root
+-newrole -r sysadm_r
+-mkdir /tmp/SystemHigh
+-chcon -l SystemHigh /tmp/SystemHigh
+-crontab -e
+-# write in crontab file
+-MLS_LEVEL=SystemHigh
+-0-59 * * * * id -Z > /tmp/SystemHigh/crontest
+-Now if I log in as a normal user it can't work, because /tmp/SystemHigh is
+-higher than my level.
+-.fi
+-.SH FILES
+-.I /etc/crontab
+-system crontab file
+-.SH "SEE ALSO"
+-.BR cron (8), 
+-.BR crontab (1)
+-.SH EXTENSIONS
+-When specifying day of week, both day 0 and day 7 will be considered Sunday.
+-BSD and ATT seem to disagree about this.
+-.PP
+-Lists and ranges are allowed to co-exist in the same field.  "1-3,7-9" would
+-be rejected by ATT or BSD cron -- they want to see "1-3" or "7,8,9" ONLY.
+-.PP
+-Ranges can include "steps", so "1-9/2" is the same as "1,3,5,7,9".
+-.PP
+-Names of months or days of the week can be specified by name.
+-.PP
+-Environment variables can be set in the crontab.  In BSD or ATT, the
+-environment handed to child processes is basically the one from /etc/rc.
+-.PP
+-Command output is mailed to the crontab owner (BSD can't do this), can be
+-mailed to a person other than the crontab owner (SysV can't do this), or the
+-feature can be turned off and no mail will be sent at all (SysV can't do this
+-either).
+-.PP
+-These special time specification "nicknames" are supported, which replace
+-the 5 initial time and date fields, and are prefixed by the '@' character:
+-.nf
+-@reboot    :    Run once, at startup.
+-@yearly    :    Run once a year, ie.  "0 0 1 1 *".
+-@annually  :    Run once a year, ie.  "0 0 1 1 *".
+-@monthly   :    Run once a month, ie. "0 0 1 * *".
+-@weekly    :    Run once a week, ie.  "0 0 * * 0".
+-@daily     :    Run once a day, ie.   "0 0 * * *".
+-@hourly    :    Run once an hour, ie. "0 * * * *".
+-.fi
+-.SH CAVEATS
+-In this version of
+-.I cron
+-,
+-.I /etc/crontab 
+-must not be writable by any user other than root.
+-No crontab files may be links, or linked to by any other file.
+-No crontab files may be executable, or be writable by any user
+-other than their owner.
+-.SH AUTHOR
+-.nf
+-Paul Vixie <vixie@isc.org>
+diff -rupN usercrond-1.0-control/crontab.c usercrond-1.0/crontab.c
+--- usercrond-1.0-control/crontab.c	2012-04-04 20:51:27.000000000 +0000
++++ usercrond-1.0/crontab.c	1970-01-01 00:00:00.000000000 +0000
+@@ -1,802 +0,0 @@
+-/* Copyright 1988,1990,1993,1994 by Paul Vixie
+- * All rights reserved
+- */
+-
+-/*
+- * Copyright (c) 2004 by Internet Systems Consortium, Inc. ("ISC")
+- * Copyright (c) 1997,2000 by Internet Software Consortium, Inc.
+- *
+- * Permission to use, copy, modify, and distribute this software for any
+- * purpose with or without fee is hereby granted, provided that the above
+- * copyright notice and this permission notice appear in all copies.
+- *
+- * THE SOFTWARE IS PROVIDED "AS IS" AND ISC DISCLAIMS ALL WARRANTIES
+- * WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
+- * MERCHANTABILITY AND FITNESS.  IN NO EVENT SHALL ISC BE LIABLE FOR
+- * ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
+- * WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
+- * ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT
+- * OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+- */
+-
+-#if !defined(lint) && !defined(LINT)
+-static char rcsid[] = "$Id: crontab.c,v 1.12 2004/01/23 18:56:42 vixie Exp $";
+-#endif
+-
+-/* crontab - install and manage per-user crontab files
+- * vix 02may87 [RCS has the rest of the log]
+- * vix 26jan87 [original]
+- */
+-
+-#define	MAIN_PROGRAM
+-
+-#include "cron.h"
+-#ifdef WITH_SELINUX
+-#include <selinux/selinux.h>
+-#include <selinux/context.h>
+-#include <selinux/av_permissions.h>
+-#endif
+-
+-
+-#define NHEADER_LINES 0
+-
+-enum opt_t	{ opt_unknown, opt_list, opt_delete, opt_edit, opt_replace };
+-
+-#if DEBUGGING
+-static char	*Options[] = { "???", "list", "delete", "edit", "replace" };
+-#   ifdef WITH_SELINUX
+-static char	*getoptargs = "u:lerisx:";
+-#   else
+-static char	*getoptargs = "u:lerix:";
+-#   endif
+-#else
+-#   ifdef WITH_SELINUX
+-static char	*getoptargs = "u:leris";
+-#   else
+-static char	*getoptargs = "u:leri";
+-#   endif
+-#endif
+-static char     *selinux_context = 0;
+-
+-static	PID_T		Pid;
+-static	char		User[MAX_UNAME], RealUser[MAX_UNAME];
+-static	char		Filename[MAX_FNAME], TempFilename[MAX_FNAME];
+-static	FILE		*NewCrontab;
+-static	int		CheckErrorCount;
+-static  int             PromptOnDelete;
+-static	enum opt_t	Option;
+-static	struct passwd	*pw;
+-static	void		list_cmd(void),
+-			delete_cmd(void),
+-			edit_cmd(void),
+-			poke_daemon(void),
+-			check_error(const char *),
+-			parse_args(int c, char *v[]),
+-			die(int);
+-static	int		replace_cmd(void);
+-static  char	*tmp_path(void);
+-
+-static void
+-usage(const char *msg) {
+-	fprintf(stderr, "%s: usage error: %s\n", ProgramName, msg);
+-	fprintf(stderr, "usage:\t%s [-u user] file\n", ProgramName);
+-	fprintf(stderr, "\t%s [-u user] [ -e | -l | -r ]\n", ProgramName);
+-	fprintf(stderr, "\t\t(default operation is replace, per 1003.2)\n");
+-	fprintf(stderr, "\t-e\t(edit user's crontab)\n");
+-	fprintf(stderr, "\t-l\t(list user's crontab)\n");
+-	fprintf(stderr, "\t-r\t(delete user's crontab)\n");
+-	fprintf(stderr, "\t-i\t(prompt before deleting user's crontab)\n");
+-#ifdef WITH_SELINUX
+-	fprintf(stderr, "\t-s\t(selinux context)\n");
+-#endif
+-	exit(ERROR_EXIT);
+-}
+-
+-int
+-main(int argc, char *argv[]) {
+-	int exitstatus;
+-
+-	Pid = getpid();
+-	ProgramName = argv[0];
+-
+-	setlocale(LC_ALL, "");
+-
+-#if defined(BSD)
+-	setlinebuf(stderr);
+-#endif
+-	char *n="-";			/*set the n string to - so we have a valid string to use*/ 
+-		 			/*should we desire to make changes to behavior later.*/
+-	if(argv[1] == NULL){ 		/* change behavior to allow crontab to take stdin with no '-'*/
+-		argv[1] =n;
+-	}
+-	parse_args(argc, argv);		/* sets many globals, opens a file */
+-	set_cron_cwd();
+-	if (!allowed(RealUser, CRON_ALLOW, CRON_DENY)) {
+-		fprintf(stderr,
+-			"You (%s) are not allowed to use this program (%s)\n",
+-			User, ProgramName);
+-		fprintf(stderr, "See crontab(1) for more information\n");
+-		log_it(RealUser, Pid, "AUTH", "crontab command not allowed");
+-		exit(ERROR_EXIT);
+-	}
+-	exitstatus = OK_EXIT;
+-	switch (Option) {
+-	case opt_unknown:
+-		exitstatus = ERROR_EXIT;
+-		break;
+-	case opt_list:
+-		list_cmd();
+-		break;
+-	case opt_delete:
+-		delete_cmd();
+-		break;
+-	case opt_edit:
+-		edit_cmd();
+-		break;
+-	case opt_replace:
+-		if (replace_cmd() < 0)
+-			exitstatus = ERROR_EXIT;
+-		break;
+-	default:
+-		abort();
+-	}
+-	exit(exitstatus);
+-	/*NOTREACHED*/
+-}
+-
+-static void
+-parse_args(int argc, char *argv[]) {
+-	int argch;
+-
+-	if (!(pw = getpwuid(getuid()))) {
+-		fprintf(stderr, "%s: your UID isn't in the passwd file.\n",
+-			ProgramName);
+-		fprintf(stderr, "bailing out.\n");
+-		exit(ERROR_EXIT);
+-	}
+-	if (strlen(pw->pw_name) >= sizeof User) {
+-		fprintf(stderr, "username too long\n");
+-		exit(ERROR_EXIT);
+-	}
+-	strcpy(User, pw->pw_name);
+-	strcpy(RealUser, User);
+-	Filename[0] = '\0';
+-	Option = opt_unknown;
+-	PromptOnDelete = 0;
+-	while (-1 != (argch = getopt(argc, argv, getoptargs))) {
+-		switch (argch) {
+-#if DEBUGGING
+-		case 'x':
+-			if (!set_debug_flags(optarg))
+-				usage("bad debug option");
+-			break;
+-#endif
+-		case 'u':
+-			if (MY_UID(pw) != ROOT_UID) {
+-				fprintf(stderr,
+-					"must be privileged to use -u\n");
+-				exit(ERROR_EXIT);
+-			}
+-			
+-			if( crontab_security_access() != 0 )
+-			{
+-			        fprintf(stderr,
+-				    "Access denied by SELinux, must be privileged to use -u\n");
+-			        exit(ERROR_EXIT);
+-			}
+-
+-			if (!(pw = getpwnam(optarg))) {
+-				fprintf(stderr, "%s:  user `%s' unknown\n",
+-					ProgramName, optarg);
+-				exit(ERROR_EXIT);
+-			}
+-			if (strlen(optarg) >= sizeof User)
+-				usage("username too long");
+-			(void) strcpy(User, optarg);
+-			break;
+-		case 'l':
+-			if (Option != opt_unknown)
+-				usage("only one operation permitted");
+-			Option = opt_list;
+-			break;
+-		case 'r':
+-			if (Option != opt_unknown)
+-				usage("only one operation permitted");
+-			Option = opt_delete;
+-			break;
+-		case 'e':
+-			if (Option != opt_unknown)
+-				usage("only one operation permitted");
+-			Option = opt_edit;
+-			break;
+-		case 'i':
+-       		        PromptOnDelete = 1;
+-			break;
+-#ifdef WITH_SELINUX
+-	        case 's':
+-		        if ( getprevcon( (security_context_t*)&(selinux_context) ) ) 
+-			{
+-				fprintf(stderr,
+-					"Cannot obtain SELinux process context\n");
+-				exit(ERROR_EXIT);
+-			}
+-			break;
+-#endif 
+-		default:
+-			usage("unrecognized option");
+-		}
+-	}
+-
+-	endpwent();
+-
+-	if (Option != opt_unknown) {
+-		if (argv[optind] != NULL)
+-			usage("no arguments permitted after this option");
+-	} else {
+-		if (argv[optind] != NULL) {
+-			Option = opt_replace;
+-			if (strlen(argv[optind]) >= sizeof Filename)
+-				usage("filename too long");
+-			(void) strcpy (Filename, argv[optind]);
+-		} else
+-			usage("file name must be specified for replace");
+-	}
+-
+-	if (Option == opt_replace) {
+-		/* we have to open the file here because we're going to
+-		 * chdir(2) into /var/cron before we get around to
+-		 * reading the file.
+-		 */
+-		if (!strcmp(Filename, "-"))
+-			NewCrontab = stdin;
+-		else {
+-			/* relinquish the setuid status of the binary during
+-			 * the open, lest nonroot users read files they should
+-			 * not be able to read.  we can't use access() here
+-			 * since there's a race condition.  thanks go out to
+-			 * Arnt Gulbrandsen <agulbra@pvv.unit.no> for spotting
+-			 * the race.
+-			 */
+-
+-			if (swap_uids() < OK) {
+-				perror("swapping uids");
+-				exit(ERROR_EXIT);
+-			}
+-			if (!(NewCrontab = fopen(Filename, "r"))) {
+-				perror(Filename);
+-				exit(ERROR_EXIT);
+-			}
+-			if (swap_uids_back() < OK) {
+-				perror("swapping uids back");
+-				exit(ERROR_EXIT);
+-			}
+-		}
+-	}
+-
+-	Debug(DMISC, ("user=%s, file=%s, option=%s\n",
+-		      User, Filename, Options[(int)Option]))
+-}
+-
+-static void
+-list_cmd(void) {
+-	char n[MAX_FNAME];
+-	FILE *f;
+-	int ch;
+-
+-	log_it(RealUser, Pid, "LIST", User);
+-	if (!glue_strings(n, sizeof n, SPOOL_DIR, User, '/')) {
+-		fprintf(stderr, "path too long\n");
+-		exit(ERROR_EXIT);
+-	}
+-	if (!(f = fopen(n, "r"))) {
+-		if (errno == ENOENT)
+-			fprintf(stderr, "no crontab for %s\n", User);
+-		else
+-			perror(n);
+-		exit(ERROR_EXIT);
+-	}
+-
+-	/* file is open. copy to stdout, close.
+-	 */
+-	Set_LineNum(1)
+-	while (EOF != (ch = get_char(f)))
+-		putchar(ch);
+-	fclose(f);
+-}
+-
+-static void
+-delete_cmd(void) {
+-        char n[MAX_FNAME]="";
+-	if( PromptOnDelete == 1 )
+-	{
+-	    printf("crontab: really delete %s's crontab? ", User);
+-	    fflush(stdout);
+-	    if( (fgets(n, MAX_FNAME-1, stdin)==0L)
+-	      ||((n[0] != 'Y') && (n[0] != 'y'))
+-	      )	exit(0);
+-	}
+-
+-	log_it(RealUser, Pid, "DELETE", User);
+-	if (!glue_strings(n, sizeof n, SPOOL_DIR, User, '/')) {
+-		fprintf(stderr, "path too long\n");
+-		exit(ERROR_EXIT);
+-	}
+-	if (unlink(n) != 0) {
+-		if (errno == ENOENT)
+-			fprintf(stderr, "no crontab for %s\n", User);
+-		else
+-			perror(n);
+-		exit(ERROR_EXIT);
+-	}
+-	poke_daemon();
+-}
+-
+-static void
+-check_error(const char *msg) {
+-	CheckErrorCount++;
+-	fprintf(stderr, "\"%s\":%d: %s\n", Filename, LineNumber-1, msg);
+-}
+-
+-static char *
+-tmp_path() {
+-   char *tmpdir;
+-
+-   tmpdir = getenv("TMPDIR");
+-   return tmpdir ? tmpdir : "/tmp";
+-}
+-
+-static void
+-edit_cmd(void) {
+-	char n[MAX_FNAME], q[MAX_TEMPSTR], *editor;
+-	FILE *f;
+-	int ch='\0', t;
+-	struct stat statbuf;
+-	struct utimbuf utimebuf;
+-	WAIT_T waiter;
+-	PID_T pid, xpid;
+-	int uid;
+-	
+-	log_it(RealUser, Pid, "BEGIN EDIT", User);
+-	if (!glue_strings(n, sizeof n, SPOOL_DIR, User, '/')) {
+-		fprintf(stderr, "path too long\n");
+-		exit(ERROR_EXIT);
+-	}
+-	if (!(f = fopen(n, "r"))) {
+-		if (errno != ENOENT) {
+-			perror(n);
+-			exit(ERROR_EXIT);
+-		}
+-		fprintf(stderr, "no crontab for %s - using an empty one\n",
+-			User);
+-		if (!(f = fopen(_PATH_DEVNULL, "r"))) {
+-			perror(_PATH_DEVNULL);
+-			exit(ERROR_EXIT);
+-		}
+-	}
+-
+-	if (fstat(fileno(f), &statbuf) < 0) {
+-		perror("fstat");
+-		goto fatal;
+-	}
+-	utimebuf.actime = statbuf.st_atime;
+-	utimebuf.modtime = statbuf.st_mtime;
+-
+-	/* Turn off signals. */
+-	(void)signal(SIGHUP, SIG_IGN);
+-	(void)signal(SIGINT, SIG_IGN);
+-	(void)signal(SIGQUIT, SIG_IGN);
+-
+-	if (!glue_strings(Filename, sizeof Filename, tmp_path(),
+-	    "crontab.XXXXXXXXXX", '/')) {
+-		fprintf(stderr, "path too long\n");
+-		goto fatal;
+-	}
+-	//syslog(LOG_ERR,"%s%s",Filename,tmp_path());
+-	//syslog(LOG_ERR,"BEFORE MKSTEMP pid: %d uid: %d gid: %d",Pid,MY_UID(pw), MY_GID(pw));//uid, gid);
+-	uid = MY_UID(pw);
+-	setreuid(0, uid);
+-  //syslog(LOG_ERR,"BEFORE MKSTEMP SETREUID pid: %d uid: %d gid: %d",Pid,MY_UID(pw), MY_GID(pw));//uid,gid);
+-	if (-1 == (t = mkstemp(Filename))) {
+-		perror(Filename);
+-		goto fatal;
+-	}
+-
+-/* instead of chown we're using setreuid */
+-/*#ifdef HAS_FCHOWN
+-	if (fchown(t, MY_UID(pw), MY_GID(pw)) < 0) {
+-		perror("fchown");
+-		goto fatal;
+-	}
+-#else
+-	if (chown(Filename, MY_UID(pw), MY_GID(pw)) < 0) {
+-		perror("chown");
+-		goto fatal;
+-	}
+-#endif*/
+-	
+-    setreuid(uid,0);
+-	//syslog(LOG_ERR,"AFTER MKSTEMP pid: %d uid: %d gid: %d",Pid,uid, MY_GID(pw));
+-	if (!(NewCrontab = fdopen(t, "r+"))) {
+-		perror("fdopen");
+-		goto fatal;
+-	}
+-
+-	Set_LineNum(1)
+-	/* 
+-	 * NHEADER_LINES processing removed for clarity
+-	 * (NHEADER_LINES == 0 in all Red Hat crontabs)
+-	 */
+-	
+-	/* copy the rest of the crontab (if any) to the temp file.
+-	 */
+-	if (EOF != ch)
+-		while (EOF != (ch = get_char(f)))
+-			putc(ch, NewCrontab);
+-
+-#ifdef WITH_SELINUX
+-	if ( selinux_context )
+-	{
+-                context_t ccon = NULL;
+-                char *level = NULL;
+-
+-                if (!(ccon = context_new(selinux_context)))
+-                {
+-                        fprintf(stderr, "context_new failed\n");
+-                        goto fatal;
+-                }
+-                
+-                if (!(level = context_range_get(ccon)))
+-                {
+-                        fprintf(stderr, "context_range failed\n");
+-                        goto fatal;
+-                }
+-                
+-		fprintf(NewCrontab,"MLS_LEVEL=%s\n", level);
+-                context_free(ccon);
+-		freecon(selinux_context);
+-                selinux_context = NULL;
+-	}
+-#endif
+-
+-	fclose(f);
+-	if (fflush(NewCrontab) < OK) {
+-		perror(Filename);
+-		exit(ERROR_EXIT);
+-	}
+-	utime(Filename, &utimebuf);
+- again:
+-	rewind(NewCrontab);
+-	if (ferror(NewCrontab)) {
+-		fprintf(stderr, "%s: error while writing new crontab to %s\n",
+-			ProgramName, Filename);
+- fatal:
+-		unlink(Filename);
+-		exit(ERROR_EXIT);
+-	}
+-
+-	if (((editor = getenv("VISUAL")) == NULL || *editor == '\0') &&
+-	    ((editor = getenv("EDITOR")) == NULL || *editor == '\0')) {
+-		editor = EDITOR;
+-	}
+-
+-	/* we still have the file open.  editors will generally rewrite the
+-	 * original file rather than renaming/unlinking it and starting a
+-	 * new one; even backup files are supposed to be made by copying
+-	 * rather than by renaming.  if some editor does not support this,
+-	 * then don't use it.  the security problems are more severe if we
+-	 * close and reopen the file around the edit.
+-	 */
+-
+-	switch (pid = fork()) {
+-	case -1:
+-		perror("fork");
+-		goto fatal;
+-	case 0:
+-		/* child */
+-		if (setgid(MY_GID(pw)) < 0) {
+-			perror("setgid(getgid())");
+-			exit(ERROR_EXIT);
+-		}
+-		if (setuid(MY_UID(pw)) < 0) {
+-			perror("setuid(getuid())");
+-			exit(ERROR_EXIT);
+-		}
+-/*		if (chdir(_PATH_TMP) < 0) {
+-			perror(_PATH_TMP);
+-			exit(ERROR_EXIT);
+-		}*/
+-		if (!glue_strings(q, sizeof q, editor, Filename, ' ')) {
+-			fprintf(stderr, "%s: editor command line too long\n",
+-			    ProgramName);
+-			exit(ERROR_EXIT);
+-		}
+-		execlp(_PATH_BSHELL, _PATH_BSHELL, "-c", q, (char *)0);
+-		perror(editor);
+-		exit(ERROR_EXIT);
+-		/*NOTREACHED*/
+-	default:
+-		/* parent */
+-		break;
+-	}
+-
+-	/* parent */
+-	for (;;) {
+-		xpid = waitpid(pid, &waiter, 0);
+-		if (xpid == -1) {
+-			if (errno != EINTR)
+-				fprintf(stderr, "%s: waitpid() failed waiting for PID %ld from \"%s\": %s\n",
+-					ProgramName, (long)pid, editor, strerror(errno));
+-		} else if (xpid != pid) {
+-			fprintf(stderr, "%s: wrong PID (%ld != %ld) from \"%s\"\n",
+-				ProgramName, (long)xpid, (long)pid, editor);
+-			goto fatal;
+-		} else if (WIFEXITED(waiter) && WEXITSTATUS(waiter)) {
+-			fprintf(stderr, "%s: \"%s\" exited with status %d\n",
+-				ProgramName, editor, WEXITSTATUS(waiter));
+-			goto fatal;
+-		} else if (WIFSIGNALED(waiter)) {
+-			fprintf(stderr,
+-				"%s: \"%s\" killed; signal %d (%score dumped)\n",
+-				ProgramName, editor, WTERMSIG(waiter),
+-				WCOREDUMP(waiter) ?"" :"no ");
+-			goto fatal;
+-		} else
+-			break;
+-	}
+-	(void)signal(SIGHUP, SIG_DFL);
+-	(void)signal(SIGINT, SIG_DFL);
+-	(void)signal(SIGQUIT, SIG_DFL);      
+-
+-	if (lstat(Filename, &statbuf) < 0) {
+-		perror("lstat");
+-		goto fatal;
+-	}
+-
+-	if ( !S_ISREG(statbuf.st_mode) )
+-	{
+-	    fprintf(stderr, "%s: illegal crontab\n",
+-			ProgramName);
+-		goto remove;	    
+-	}
+-
+-	if (utimebuf.modtime == statbuf.st_mtime) {
+-		fprintf(stderr, "%s: no changes made to crontab\n",
+-			ProgramName);
+-		goto remove;
+-	}
+-
+-	fprintf(stderr, "%s: installing new crontab\n", ProgramName);
+-        fclose(NewCrontab);
+-	if (swap_uids() < OK) {
+-	    perror("swapping uids");
+-	    goto remove;
+-	}
+-	if (!(NewCrontab = fopen(Filename, "r+"))) {
+-	    perror("cannot read new crontab");
+-	    goto remove;	    
+-	}
+-	if (swap_uids_back() < OK) {
+-	    perror("swapping uids back");
+-	    exit(ERROR_EXIT);
+-	}
+-	if( NewCrontab == 0L )
+-	{
+-	    perror("fopen");
+-	    goto fatal;
+-	}
+-	switch (replace_cmd()) {
+-	case 0:
+-		break;
+-	case -1:
+-		for (;;) {
+-			printf("Do you want to retry the same edit? ");
+-			fflush(stdout);
+-			q[0] = '\0';
+-			if( fgets(q, sizeof q, stdin) == 0L )
+-			    continue;
+-			switch (q[0]) {
+-			case 'y':
+-			case 'Y':
+-				goto again;
+-			case 'n':
+-			case 'N':
+-				goto abandon;
+-			default:
+-				fprintf(stderr, "Enter Y or N\n");
+-			}
+-		}
+-		/*NOTREACHED*/
+-	case -2:
+-	abandon:
+-		fprintf(stderr, "%s: edits left in %s\n",
+-			ProgramName, Filename);
+-		goto done;
+-	default:
+-		fprintf(stderr, "%s: panic: bad switch() in replace_cmd()\n",
+-			ProgramName);
+-		goto fatal;
+-	}
+- remove:
+-	unlink(Filename);
+- done:
+-	log_it(RealUser, Pid, "END EDIT", User);
+-}
+-
+-/* returns	0	on success
+- *		-1	on syntax error
+- *		-2	on install error
+- */
+-static int
+-replace_cmd(void) {
+-	char n[MAX_FNAME], envstr[MAX_ENVSTR];
+-	FILE *tmp;
+-	int ch, eof, fd;
+-	int error = 0;
+-	entry *e;
+-	uid_t file_owner;
+-	char **envp = env_init();
+-
+-	if (envp == NULL) {
+-		fprintf(stderr, "%s: Cannot allocate memory.\n", ProgramName);
+-		return (-2);
+-	}
+-
+-	if (!glue_strings(TempFilename, sizeof TempFilename, SPOOL_DIR,
+-	    "tmp.XXXXXXXXXX", '/')) {
+-		TempFilename[0] = '\0';
+-		fprintf(stderr, "path too long\n");
+-		return (-2);
+-	}
+-	if ((fd = mkstemp(TempFilename)) == -1 || !(tmp = fdopen(fd, "w+"))) {
+-		perror(TempFilename);
+-		if (fd != -1) {
+-			close(fd);
+-			unlink(TempFilename);
+-		}
+-		TempFilename[0] = '\0';
+-		return (-2);
+-	}
+-
+-	(void) signal(SIGHUP, die);
+-	(void) signal(SIGINT, die);
+-	(void) signal(SIGQUIT, die);
+-
+-	/* write a signature at the top of the file.
+-	 *
+-	 * VERY IMPORTANT: make sure NHEADER_LINES agrees with this code.
+-	 */
+-	/*fprintf(tmp, "# DO NOT EDIT THIS FILE - edit the master and reinstall.\n");
+-	 *fprintf(tmp, "# (%s installed on %-24.24s)\n", Filename, ctime(&now));
+-	 *fprintf(tmp, "# (Cron version %s -- %s)\n", CRON_VERSION, rcsid);
+-	 */
+-#ifdef WITH_SELINUX
+-	if ( selinux_context )
+-		fprintf(tmp,"SELINUX_ROLE_TYPE=%s\n", selinux_context);
+-#endif
+-
+-	/* copy the crontab to the tmp
+-	 */
+-	rewind(NewCrontab);
+-	Set_LineNum(1)
+-	while (EOF != (ch = get_char(NewCrontab)))
+-		putc(ch, tmp);
+-	if( ftruncate(fileno(tmp), ftell(tmp)) == -1 )
+-	{
+-	    fprintf(stderr, "%s: error while writing new crontab to %s\n",
+-		    ProgramName, TempFilename);
+-	    fclose(tmp);
+-	    error = -2;
+-	    goto done;  
+-	}
+-	fflush(tmp);  rewind(tmp);
+-	if (ferror(tmp)) {
+-		fprintf(stderr, "%s: error while writing new crontab to %s\n",
+-			ProgramName, TempFilename);
+-		fclose(tmp);
+-		error = -2;
+-		goto done;
+-	}
+-
+-	/* check the syntax of the file being installed.
+-	 */
+-
+-	/* BUG: was reporting errors after the EOF if there were any errors
+-	 * in the file proper -- kludged it by stopping after first error.
+-	 *		vix 31mar87
+-	 */
+-	Set_LineNum(1 - NHEADER_LINES)
+-	CheckErrorCount = 0;  eof = FALSE;
+-	while (!CheckErrorCount && !eof) {
+-		switch (load_env(envstr, tmp)) {
+-		case ERR:
+-			/* check for data before the EOF */
+-			if (envstr[0] != '\0') {
+-				Set_LineNum(LineNumber + 1);
+-				check_error("premature EOF");
+-			}
+-			eof = TRUE;
+-			break;
+-		case FALSE:
+-			e = load_entry(tmp, check_error, pw, envp);
+-			if (e)
+-				free(e);
+-			break;
+-		case TRUE:
+-			break;
+-		}
+-	}
+-
+-	if (CheckErrorCount != 0) {
+-		fprintf(stderr, "errors in crontab file, can't install.\n");
+-		fclose(tmp);
+-		error = -1;
+-		goto done;
+-	}
+-
+-	file_owner = (getgid() == getegid()) ? ROOT_UID : pw->pw_uid;
+-
+-#ifdef HAS_FCHOWN
+-	if (fchown(fileno(tmp), file_owner, -1) < OK) {
+-		perror("fchown");
+-		fclose(tmp);
+-		error = -2;
+-		goto done;
+-	}
+-#else
+-	if (chown(TempFilename, file_owner, -1) < OK) {
+-		perror("chown");
+-		fclose(tmp);
+-		error = -2;
+-		goto done;
+-	}
+-#endif
+-
+-	if (fclose(tmp) == EOF) {
+-		perror("fclose");
+-		error = -2;
+-		goto done;
+-	}
+-
+-	if (!glue_strings(n, sizeof n, SPOOL_DIR, User, '/')) {
+-		fprintf(stderr, "path too long\n");
+-		error = -2;
+-		goto done;
+-	}
+-	if (rename(TempFilename, n)) {
+-		fprintf(stderr, "%s: error renaming %s to %s\n",
+-			ProgramName, TempFilename, n);
+-		perror("rename");
+-		error = -2;
+-		goto done;
+-	}
+-	TempFilename[0] = '\0';
+-	log_it(RealUser, Pid, "REPLACE", User);
+-
+-	poke_daemon();
+-
+-done:
+-	(void) signal(SIGHUP, SIG_DFL);
+-	(void) signal(SIGINT, SIG_DFL);
+-	(void) signal(SIGQUIT, SIG_DFL);
+-	if (TempFilename[0]) {
+-		(void) unlink(TempFilename);
+-		TempFilename[0] = '\0';
+-	}
+-	return (error);
+-}
+-
+-static void
+-poke_daemon(void) {
+-	if (utime(SPOOL_DIR, NULL) < OK) {
+-		fprintf(stderr, "crontab: can't update mtime on spooldir\n");
+-		perror(SPOOL_DIR);
+-		return;
+-	}
+-}
+-
+-static void
+-die(int x) {
+-	if (TempFilename[0])
+-		(void) unlink(TempFilename);
+-	_exit(ERROR_EXIT);
+-}
+diff -rupN usercrond-1.0-control/database.c usercrond-1.0/database.c
+--- usercrond-1.0-control/database.c	2012-04-04 20:51:27.000000000 +0000
++++ usercrond-1.0/database.c	2012-04-10 21:14:52.000000000 +0000
+@@ -30,7 +30,7 @@ static char rcsid[] = "$Id: database.c,v
+ 
+ #define TMAX(a,b) ((a)>(b)?(a):(b))
+ 
+-static	void		process_crontab(const char *, const char *,
++static	void		process_crontab(const char *,
+ 					const char *, struct stat *,
+ 					cron_db *, cron_db *);
+ 
+@@ -50,47 +50,16 @@ load_database(cron_db *old_db) {
+ 
+ 	Debug(DLOAD, ("[%ld] load_database()\n", (long)getpid()))
+ 
+-	/* before we start loading any data, do a stat on SPOOL_DIR
+-	 * so that if anything changes as of this moment (i.e., before we've
+-	 * cached any of the database), we'll see the changes next time.
+-	 */
+-	if (stat(SPOOL_DIR, &statbuf) < OK) {
+-		log_it("CRON", getpid(), "STAT FAILED", SPOOL_DIR);
+-		(void) exit(ERROR_EXIT);
+-	}
+-	
+ 	/* As pointed out in Red Hat bugzilla 198019, with modern Linux it
+ 	 * is possible to modify a file without modifying the mtime of the
+          * containing directory. Hence, we must check the mtime of each file:
+          */
+-	max_mtime(SPOOL_DIR, &statbuf);
+-
+-	if (stat(RH_CROND_DIR, &crond_stat) < OK) {
+-		log_it("CRON", getpid(), "STAT FAILED", RH_CROND_DIR);
++	if (stat(CronDir, &crond_stat) < OK) {
++		log_it("CRON", getpid(), "STAT FAILED", CronDir);
+ 		(void) exit(ERROR_EXIT);
+ 	}
+ 
+-	max_mtime(RH_CROND_DIR, &crond_stat);
+-
+-	/* track system crontab file
+-	 */
+-	if (stat(SYSCRONTAB, &syscron_stat) < OK)
+-		syscron_stat.st_mtime = 0;
+-
+-	/* if spooldir's mtime has not changed, we don't need to fiddle with
+-	 * the database.
+-	 *
+-	 * Note that old_db->mtime is initialized to 0 in main(), and
+-	 * so is guaranteed to be different than the stat() mtime the first
+-	 * time this function is called.
+-	 */
+-	if (old_db->mtime == TMAX(crond_stat.st_mtime,
+-				  TMAX(statbuf.st_mtime, syscron_stat.st_mtime))
+-	   ){
+-		Debug(DLOAD, ("[%ld] spool dir mtime unch, no load needed.\n",
+-			      (long)getpid()))
+-		return;
+-	}
++	max_mtime(CronDir, &crond_stat);
+ 
+ 	/* something's different.  make a new database, moving unchanged
+ 	 * elements from the old database, reloading elements that have
+@@ -101,36 +70,8 @@ load_database(cron_db *old_db) {
+ 			    TMAX(statbuf.st_mtime, syscron_stat.st_mtime));
+ 	new_db.head = new_db.tail = NULL;
+ 
+-	if (syscron_stat.st_mtime)
+-		process_crontab("root", NULL, SYSCRONTAB, &syscron_stat,
+-				&new_db, old_db);
+-
+-	if (!(dir = opendir(RH_CROND_DIR))) {
+-		log_it("CRON", getpid(), "OPENDIR FAILED", RH_CROND_DIR);
+-		(void) exit(ERROR_EXIT);
+-	}
+-
+-	while (NULL != (dp = readdir(dir))) {
+-		char   tabname[MAXNAMLEN+1];
+-
+-		if ( not_a_crontab( dp ) )
+-			continue;
+-
+-		if (!glue_strings(tabname, sizeof tabname, RH_CROND_DIR, dp->d_name, '/'))
+-			continue;	/* XXX log? */
+-
+-		process_crontab("root", NULL, tabname,
+-				&crond_stat, &new_db, old_db);
+-	}
+-	closedir(dir);
+-
+-	/* we used to keep this dir open all the time, for the sake of
+-	 * efficiency.  however, we need to close it in every fork, and
+-	 * we fork a lot more often than the mtime of the dir changes.
+-	 */
+-
+-	if (!(dir = opendir(SPOOL_DIR))) {
+-		log_it("CRON", getpid(), "OPENDIR FAILED", SPOOL_DIR);
++	if (!(dir = opendir(CronDir))) {
++		log_it("CRON", getpid(), "OPENDIR FAILED", CronDir);
+ 		(void) exit(ERROR_EXIT);
+ 	}
+ 
+@@ -142,11 +83,11 @@ load_database(cron_db *old_db) {
+ 
+ 		strncpy(fname, dp->d_name, MAXNAMLEN);
+ 
+-		if (!glue_strings(tabname, sizeof tabname, SPOOL_DIR, fname, '/'))
++		if (!glue_strings(tabname, sizeof tabname, CronDir, fname, '/'))
+ 			continue;	/* XXX log? */
+ 
+-		process_crontab(fname, fname, tabname,
+-				&statbuf, &new_db, old_db);
++		process_crontab(fname, tabname,
++				&crond_stat, &new_db, old_db);
+ 	}
+ 	closedir(dir);
+ 
+@@ -210,19 +151,18 @@ find_user(cron_db *db, const char *name,
+ }
+ 
+ static void
+-process_crontab(const char *uname, const char *fname, const char *tabname,
++process_crontab(const char *fname, const char *tabname,
+ 		struct stat *statbuf, cron_db *new_db, cron_db *old_db)
+ {
+ 	struct passwd *pw = NULL;
+ 	int crontab_fd = OK - 1;
+ 	user *u;
+-	int crond_crontab = (fname == NULL) && (strcmp(tabname, SYSCRONTAB) != 0);
+ 
+ 	if (fname == NULL) {
+ 		/* must be set to something for logging purposes.
+ 		 */
+ 		fname = "*system*";
+-	} else if ((pw = getpwnam(uname)) == NULL) {
++	} else if ((pw = getpwuid(getuid())) == NULL) {
+ 		/* file doesn't have a user in passwd file.
+ 		 */
+ 		log_it(fname, getpid(), "ORPHAN", "no passwd entry");
+@@ -251,8 +191,8 @@ process_crontab(const char *uname, const
+ 		    log_it(fname, getpid(), "BAD FILE MODE", tabname);
+ 		    goto next_crontab;
+ 	    }
+-	    if (statbuf->st_uid != ROOT_UID && (pw == NULL ||
+-		statbuf->st_uid != pw->pw_uid || strcmp(uname, pw->pw_name) != 0)) {
++	    if (statbuf->st_uid != getuid() && (pw == NULL ||
++		    statbuf->st_uid != pw->pw_uid)) {
+ 		    log_it(fname, getpid(), "WRONG FILE OWNER", tabname);
+ 		    goto next_crontab;
+ 	    }
+@@ -264,7 +204,7 @@ process_crontab(const char *uname, const
+ 
+ 	Debug(DLOAD, ("\t%s:", fname))
+ 
+-	u = find_user(old_db, fname, crond_crontab ? tabname : NULL );
++	u = find_user(old_db, fname, NULL );
+ 
+ 	if (u != NULL) {
+ 		/* if crontab has not changed since we last read it
+@@ -289,7 +229,7 @@ process_crontab(const char *uname, const
+ 		free_user(u);
+ 		log_it(fname, getpid(), "RELOAD", tabname);
+ 	}
+-	u = load_user(crontab_fd, pw, uname, fname, tabname);
++	u = load_user(crontab_fd, pw, fname, tabname);
+ 	if (u != NULL) {
+ 		u->mtime = statbuf->st_mtime;
+ 		link_user(new_db, u);
+diff -rupN usercrond-1.0-control/do_command.c usercrond-1.0/do_command.c
+--- usercrond-1.0-control/do_command.c	2012-04-04 20:51:27.000000000 +0000
++++ usercrond-1.0/do_command.c	2012-04-03 22:35:28.000000000 +0000
+@@ -238,7 +238,9 @@ child_process(entry *e, user *u) {
+ 		}
+ 		break;
+ 	default:
++#ifdef WITH_SELINUX
+ 		cron_restore_default_security_context();
++#endif
+ 		/* parent process */
+ 		break;
+ 	}
+diff -rupN usercrond-1.0-control/funcs.h usercrond-1.0/funcs.h
+--- usercrond-1.0-control/funcs.h	2012-04-04 20:51:27.000000000 +0000
++++ usercrond-1.0/funcs.h	2012-04-10 19:15:20.000000000 +0000
+@@ -65,7 +65,7 @@ char		*env_get(char *, char **),
+ 		**env_copy(char **),
+ 		**env_set(char **, char *);
+ 
+-user		*load_user(int, struct passwd *, const char *, const char *, const char *),
++user		*load_user(int, struct passwd *, const char *, const char *),
+ 		*find_user(cron_db *, const char *, const char *);
+ 
+ entry		*load_entry(FILE *, void (*)(), struct passwd *, char **);
+diff -rupN usercrond-1.0-control/globals.h usercrond-1.0/globals.h
+--- usercrond-1.0-control/globals.h	2012-04-04 20:51:27.000000000 +0000
++++ usercrond-1.0/globals.h	2012-04-11 21:53:45.000000000 +0000
+@@ -67,6 +67,8 @@ XTRN int        PermitAnyCrontab INIT(0)
+ XTRN int        ValidateMailRcpts INIT(0);
+ XTRN char       MailCmd[MAX_COMMAND] INIT("");
+ XTRN char       cron_default_mail_charset[MAX_ENVSTR] INIT("");
++XTRN char	CronDir[MAX_COMMAND] INIT("");
++XTRN char	CronPid[MAX_COMMAND] INIT("");
+  
+ #if DEBUGGING
+ XTRN int	DebugFlags INIT(0);
+diff -rupN usercrond-1.0-control/macros.h usercrond-1.0/macros.h
+--- usercrond-1.0-control/macros.h	2012-04-04 20:51:27.000000000 +0000
++++ usercrond-1.0/macros.h	2012-04-10 20:28:05.000000000 +0000
+@@ -49,9 +49,6 @@
+ #define	MAX_ENVSTR	131072	/* max length of envvar=value\0 strings */
+ #define	MAX_TEMPSTR	131072	/* obvious */
+ #define	MAX_UNAME	256	/* max length of username  */
+-#define	ROOT_UID	0	/* don't change this, it really must be root */
+-#define	ROOT_USER	"root"	/* ditto */
+-
+ 				/* NOTE: these correspond to DebugFlagNames,
+ 				 *	defined below.
+ 				 */
+diff -rupN usercrond-1.0-control/Makefile usercrond-1.0/Makefile
+--- usercrond-1.0-control/Makefile	2012-04-04 20:51:27.000000000 +0000
++++ usercrond-1.0/Makefile	2012-04-12 16:50:45.000000000 +0000
+@@ -73,6 +73,9 @@ AUDIT_LIBS=-laudit
+ AUDIT_DEFS=-DWITH_AUDIT
+ endif
+ LIBS		=       $(SELINUX_LIBS) $(PAM_LIBS) $(AUDIT_LIBS)
++ifdef CRONDIRPATH
++CRONDIR=-DCRONDIR=$(CRONDIRPATH)
++endif
+ #<<optimize or debug?>>
+ #CDEBUG		=	-O
+ #CDEBUG		=	-g
+@@ -82,7 +85,7 @@ LINTFLAGS	=	-hbxa $(INCLUDE) $(DEBUGGING
+ #<<want to use a nonstandard CC?>>
+ CC		=	gcc -Wall -Wno-unused -Wno-comment
+ #<<manifest defines>>
+-DEFS		=	$(SELINUX_DEFS) $(PAM_DEFS) $(AUDIT_DEFS)
++DEFS		=	$(SELINUX_DEFS) $(PAM_DEFS) $(AUDIT_DEFS) $(CRONDIR)
+ #(SGI IRIX systems need this)
+ #DEFS		=	-D_BSD_SIGNALS -Dconst=
+ #<<the name of the BSD-like install program>>
+@@ -96,20 +99,20 @@ SHELL		=	/bin/sh
+ CFLAGS		=	$(CDEBUG) $(INCLUDE) $(DEFS)
+ 
+ INFOS		=	README CHANGES FEATURES INSTALL CONVERSION THANKS MAIL
+-MANPAGES	=	bitstring.3 crontab.5 crontab.1 cron.8 putman.sh
++MANPAGES	=	bitstring.3 cron.8 putman.sh
+ HEADERS		=	bitstring.h cron.h config.h pathnames.h externs.h \
+ 			macros.h structs.h funcs.h globals.h
+-SOURCES		=	cron.c crontab.c database.c do_command.c entry.c \
+-			env.c job.c user.c popen.c misc.c pw_dup.c security.c
++SOURCES		=	cron.c database.c do_command.c entry.c env.c job.c \
++			user.c popen.c misc.c pw_dup.c security.c
+ SHAR_SOURCE	=	$(INFOS) $(MANPAGES) Makefile $(HEADERS) $(SOURCES)
+ LINT_CRON	=	cron.c database.c user.c entry.c \
+ 			misc.c job.c do_command.c env.c popen.c pw_dup.c
+-LINT_CRONTAB	=	crontab.c misc.c entry.c env.c
++LINT_CRONTAB	=	misc.c entry.c env.c
+ CRON_OBJ	=	cron.o database.o user.o entry.o job.o do_command.o \
+ 			misc.o env.o popen.o pw_dup.o security.o
+-CRONTAB_OBJ	=	crontab.o misc.o entry.o env.o pw_dup.o security.o
++CRONTAB_OBJ	=	misc.o entry.o env.o pw_dup.o security.o
+ 
+-all		:	cron crontab
++all		:	cron
+ 
+ lint		:
+ 			lint $(LINTFLAGS) $(LINT_CRON) $(LIBS) \
+@@ -120,29 +123,18 @@ lint		:
+ cron		:	$(CRON_OBJ)
+ 			$(CC) $(LDFLAGS) -o cron -pie $(CRON_OBJ) $(LIBS)
+ 
+-crontab		:	$(CRONTAB_OBJ)
+-			$(CC) $(LDFLAGS) -o crontab $(CRONTAB_OBJ) $(LIBS)
+-
+ install		:	all
+-			$(INSTALL) -c -m 755 cron    $(DESTSBIN)/crond
+-			$(INSTALL) -c -m 4755 crontab $(DESTBIN)/
+-			$(INSTALL) -c -m 0600 crond.pam $(DESTETC)/pam.d/crond
+-#			$(INSTALL) -c -m  111 -o root -g crontab -s cron $(DESTSBIN)/
+-#			$(INSTALL) -c -m 2111 -o root -g crontab -s crontab $(DESTBIN)/
+-			sh putman.sh crontab.1 $(DESTMAN)
+-			chmod 644 $(DESTMAN)/man1/crontab.1
+-			sh putman.sh cron.8    $(DESTMAN)
+-			chmod 644 $(DESTMAN)/man8/cron.8
+-			ln -sf cron.8 $(DESTMAN)/man8/crond.8
+-			sh putman.sh crontab.5 $(DESTMAN)
+-			chmod 644 $(DESTMAN)/man5/crontab.5
++			$(INSTALL) -c -m 755 cron    $(DESTBIN)/usercrond
++#			sh putman.sh cron.8    $(DESTMAN)
++#			chmod 644 $(DESTMAN)/man8/cron.8
++#			ln -sf cron.8 $(DESTMAN)/man8/crond.8
+ 
+ distclean	:	clean
+ 			rm -f *.orig *.rej *.BAK *.CKP *~ #*
+ 			rm -f a.out core tags
+ 
+ clean		:
+-			rm -f *.o cron crontab a.out core tags *~ #*
++			rm -f *.o cron a.out core tags *~ #*
+ 
+ tags		:;	ctags ${SOURCES}
+ 
+diff -rupN usercrond-1.0-control/misc.c usercrond-1.0/misc.c
+--- usercrond-1.0-control/misc.c	2012-04-04 20:51:27.000000000 +0000
++++ usercrond-1.0/misc.c	2012-04-11 22:03:03.000000000 +0000
+@@ -192,14 +192,14 @@ set_debug_flags(const char *flags) {
+ }
+ 
+ void
+-set_cron_uid(void) {
++set_cron_uid() {
+ #if defined(BSD) || defined(POSIX)
+-	if (seteuid(ROOT_UID) < OK) {
++	if (seteuid(geteuid()) < OK) {
+ 		perror("seteuid");
+ 		exit(ERROR_EXIT);
+ 	}
+ #else
+-	if (setuid(ROOT_UID) < OK) {
++	if (setuid(getuid()) < OK) {
+ 		perror("setuid");
+ 		exit(ERROR_EXIT);
+ 	}
+@@ -214,62 +214,29 @@ set_cron_cwd(void) {
+ #ifdef CRON_GROUP
+ 	grp = getgrnam(CRON_GROUP);
+ #endif
+-	/* first check for CRONDIR ("/var/cron" or some such)
++	/* first check for CronDir ("/var/cron" or some such)
+ 	 */
+-	if (stat(CRONDIR, &sb) < OK && errno == ENOENT) {
+-		perror(CRONDIR);
+-		if (OK == mkdir(CRONDIR, 0710)) {
+-			fprintf(stderr, "%s: created\n", CRONDIR);
+-			stat(CRONDIR, &sb);
++	if (stat(CronDir, &sb) < OK && errno == ENOENT) {
++		perror(CronDir);
++		if (OK == mkdir(CronDir, 0710)) {
++			fprintf(stderr, "%s: created\n", CronDir);
++			stat(CronDir, &sb);
+ 		} else {
+-			fprintf(stderr, "%s: ", CRONDIR);
++			fprintf(stderr, "%s: ", CronDir);
+ 			perror("mkdir");
+ 			exit(ERROR_EXIT);
+ 		}
+ 	}
+ 	if (!S_ISDIR(sb.st_mode)) {
+ 		fprintf(stderr, "'%s' is not a directory, bailing out.\n",
+-			CRONDIR);
++			CronDir);
+ 		exit(ERROR_EXIT);
+ 	}
+-	if (chdir(CRONDIR) < OK) {
+-		fprintf(stderr, "cannot chdir(%s), bailing out.\n", CRONDIR);
+-		perror(CRONDIR);
++	if (chdir(CronDir) < OK) {
++		fprintf(stderr, "cannot chdir(%s), bailing out.\n", CronDir);
++		perror(CronDir);
+ 		exit(ERROR_EXIT);
+ 	}
+-
+-	/* CRONDIR okay (now==CWD), now look at SPOOL_DIR ("tabs" or some such)
+-	 */
+-	if (stat(SPOOL_DIR, &sb) < OK && errno == ENOENT) {
+-		perror(SPOOL_DIR);
+-		if (OK == mkdir(SPOOL_DIR, 0700)) {
+-			fprintf(stderr, "%s: created\n", SPOOL_DIR);
+-			stat(SPOOL_DIR, &sb);
+-		} else {
+-			fprintf(stderr, "%s: ", SPOOL_DIR);
+-			perror("mkdir");
+-			exit(ERROR_EXIT);
+-		}
+-	}
+-	if (!S_ISDIR(sb.st_mode)) {
+-		fprintf(stderr, "'%s' is not a directory, bailing out.\n",
+-			SPOOL_DIR);
+-		exit(ERROR_EXIT);
+-	}
+-	if (grp != NULL) {
+-		if (sb.st_gid != grp->gr_gid)
+-		    if( chown(SPOOL_DIR, -1, grp->gr_gid) == -1 )
+-		    {
+-			fprintf(stderr,"chdir %s failed: %s\n", SPOOL_DIR, strerror(errno));
+-			exit(ERROR_EXIT);
+-		    }
+-		if (sb.st_mode != 01730)
+-		    if( chmod(SPOOL_DIR, 01730) == -1 )
+-		    {
+-			fprintf(stderr,"chmod 01730 %s failed: %s\n", SPOOL_DIR, strerror(errno));
+-			exit(ERROR_EXIT);
+-		    }
+-	}
+ }
+ 
+ /* acquire_daemonlock() - write our PID into /etc/cron.pid, unless
+@@ -298,7 +265,7 @@ acquire_daemonlock(int closeflag) {
+ 	}
+ 
+ 	if (fd == -1) {
+-		pidfile = _PATH_CRON_PID;
++		pidfile = CronPid;
+ 		/* Initial mode is 0600 to prevent flock() race/DoS. */
+ 		if ((fd = open(pidfile, O_RDWR|O_CREAT, 0600)) == -1) {
+ 			sprintf(buf, "can't open or create %s: %s",
+diff -rupN usercrond-1.0-control/pathnames.h usercrond-1.0/pathnames.h
+--- usercrond-1.0-control/pathnames.h	2012-04-04 20:51:27.000000000 +0000
++++ usercrond-1.0/pathnames.h	2012-04-11 22:07:34.000000000 +0000
+@@ -30,30 +30,6 @@
+ # include <paths.h>
+ #endif /*BSD*/
+ 
+-#ifndef CRONDIR
+-			/* CRONDIR is where cron(8) and crontab(1) both chdir
+-			 * to; SPOOL_DIR, CRON_ALLOW, CRON_DENY, and LOG_FILE
+-			 * are all relative to this directory.
+-			 */
+-#define CRONDIR		"/var/spool"
+-#endif
+-
+-			/* SPOOLDIR is where the crontabs live.
+-			 * This directory will have its modtime updated
+-			 * whenever crontab(1) changes a crontab; this is
+-			 * the signal for cron(8) to look at each individual
+-			 * crontab file and reload those whose modtimes are
+-			 * newer than they were last time around (or which
+-			 * didn't exist last time around...)
+-			 */
+-#define SPOOL_DIR	"cron"
+-
+-			/* cron allow/deny file.  At least cron.deny must
+-			 * exist for ordinary users to run crontab.
+-			 */
+-#define	CRON_ALLOW	"/etc/cron.allow"
+-#define	CRON_DENY	"/etc/cron.deny"
+-
+ 			/* undefining this turns off logging to a file.  If
+ 			 * neither LOG_FILE or SYSLOG is defined, we don't log.
+ 			 * If both are defined, we log both ways.  Note that if
+@@ -62,22 +38,9 @@
+ 			 */
+ /*#define LOG_FILE	"/var/log/cron"*/
+ #define SYSLOG
+-			/* where should the daemon stick its PID?
+-			 * PIDDIR must end in '/'.
++			/* what should the daemon pid file be named?
+ 			 */
+-#ifdef _PATH_VARRUN
+-# define PIDDIR	_PATH_VARRUN
+-#else
+-# define PIDDIR "/etc/"
+-#endif
+-#define PIDFILE		"crond.pid"
+-#define _PATH_CRON_PID	PIDDIR PIDFILE
+-
+-			/* 4.3BSD-style crontab */
+-#define SYSCRONTAB	"/etc/crontab"
+-
+-                        /* Red Hat crond crontab dir */ 
+-#define RH_CROND_DIR    "/etc/cron.d"
++#define PIDFILE		"usercrond.pid"
+ 
+ 			/* what editor to use if no EDITOR or VISUAL
+ 			 * environment variable specified.
+diff -rupN usercrond-1.0-control/security.c usercrond-1.0/security.c
+--- usercrond-1.0-control/security.c	2012-04-04 20:51:27.000000000 +0000
++++ usercrond-1.0/security.c	2012-04-11 22:03:19.000000000 +0000
+@@ -41,11 +41,12 @@ static char ** build_env(char **cronenv)
+ static int cron_change_selinux_range( user *u,
+                                       security_context_t ucontext );
+ static int cron_get_job_range( user *u, security_context_t *ucontextp, char **jobenv );
+-#endif
+ 
+ int cron_restore_default_security_context() {
+ 	setexeccon(NULL);
+ }
++#endif
++
+ int cron_set_job_security_context( entry *e, user *u, char ***jobenv )
+ {
+     time_t minutely_time = 0;
+@@ -94,7 +95,6 @@ int cron_set_job_security_context( entry
+     }
+     if ( ucontext )
+ 	freecon(ucontext);
+-#endif
+ 
+     if ( cron_start_security_session( e->pwd ) != 0 )
+     {
+@@ -103,6 +103,7 @@ int cron_set_job_security_context( entry
+ 	      );
+ 	return -1;
+     }
++#endif
+ 
+     if ( cron_change_user( e->pwd, env_get("HOME", *jobenv)) != 0 )
+     {
+@@ -195,23 +196,6 @@ int cron_change_user( struct passwd *pw,
+     /* set our directory, uid and gid.  Set gid first, since once
+      * we set uid, we've lost root privledges.
+      */
+-    if ( setgid( pw->pw_gid ) != 0 )
+-    {
+-	log_it("CRON", getpid(), "setgid failed:", strerror(errno));
+-	return -1;
+-    }
+-
+-    if ( initgroups( pw->pw_name, pw->pw_gid ) != 0 )
+-    {
+-	log_it("CRON", getpid(), "initgroups failed:", strerror(errno));
+-	return -1;	
+-    }
+-
+-    if ( setuid( pw->pw_uid ) != 0 )
+-    {
+-	log_it("CRON", getpid(), "setuid failed:", strerror(errno));
+-	return -1;
+-    }
+ 
+     if (chdir(homedir) < 0) {
+ 		log_it("CRON", getpid(), "chdir(HOME) failed:", strerror(errno));
+@@ -294,7 +278,7 @@ int cron_get_job_context( user *u, void 
+ 		if ( strcmp(u->name,"*system*") == 0 )
+ 			strncpy(crontab, u->tabname, MAX_FNAME);
+ 		else
+-			snprintf(crontab, MAX_FNAME, "%s/%s", CRONDIR, u->tabname);
++			snprintf(crontab, MAX_FNAME, "%s/%s", CronDir, u->tabname);
+ 
+ 		if ( getfilecon( crontab, file_contextp ) == -1 )
+ 		{		
+diff -rupN usercrond-1.0-control/user.c usercrond-1.0/user.c
+--- usercrond-1.0-control/user.c	2012-04-04 20:51:27.000000000 +0000
++++ usercrond-1.0/user.c	2012-04-10 19:15:34.000000000 +0000
+@@ -43,7 +43,7 @@ free_user(user *u) {
+ }
+ 
+ user *
+-load_user(int crontab_fd, struct passwd	*pw, const char *uname, const char *fname, const char *tabname) {
++load_user(int crontab_fd, struct passwd	*pw, const char *fname, const char *tabname) {
+ 	char envstr[MAX_ENVSTR];
+ 	FILE *file;
+ 	user *u;
+@@ -84,7 +84,7 @@ load_user(int crontab_fd, struct passwd	
+ 		return (NULL);
+ 	}
+ 
+-	if (get_security_context(pw == NULL ? "system_u" : uname, 
++	if (get_security_context(pw == NULL ? "system_u" : pw->pw_name, 
+ 				 crontab_fd, 
+ 				 &u->scontext, tabname) != 0) {
+ 	    free_user(u);

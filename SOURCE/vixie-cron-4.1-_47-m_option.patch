@@ -1,0 +1,99 @@
+--- usercrond-1.0/do_command.c.-m_option	2005-11-13 15:46:37.000000000 -0500
++++ usercrond-1.0/do_command.c	2005-11-13 17:03:34.000000000 -0500
+@@ -508,16 +508,24 @@
+ 				char	hostname[MAXHOSTNAMELEN];
+ 
+ 				gethostname(hostname, MAXHOSTNAMELEN);
+-				if (strlens(MAILFMT, MAILARG, NULL) + 1
+-				    >= sizeof mailcmd) {
+-					fprintf(stderr, "mailcmd too long\n");
+-					(void) _exit(ERROR_EXIT);
++				
++				if ( MailCmd[0] == '\0' )
++				{
++					if (strlens(MAILFMT, MAILARG, NULL) + 1
++					    >= sizeof mailcmd) {
++						fprintf(stderr, "mailcmd too long\n");
++						(void) _exit(ERROR_EXIT);
++					}
++					(void)sprintf(mailcmd, MAILFMT, MAILARG);
++				}else
++				{
++					strncpy( mailcmd, MailCmd, MAX_COMMAND );
+ 				}
+-				(void)sprintf(mailcmd, MAILFMT, MAILARG);
+ 				if (!(mail = cron_popen(mailcmd, "w", e->pwd))) {
+ 					perror(mailcmd);
+ 					(void) _exit(ERROR_EXIT);
+ 				}
++				
+ 				fprintf(mail, "From: root (Cron Daemon)\n");
+ 				fprintf(mail, "To: %s\n", mailto);
+ 				fprintf(mail, "Subject: Cron <%s@%s> %s\n",
+--- usercrond-1.0/globals.h.-m_option	2005-11-13 15:46:37.000000000 -0500
++++ usercrond-1.0/globals.h	2005-11-13 16:56:16.000000000 -0500
+@@ -65,6 +65,7 @@
+ XTRN int	NoFork INIT(0);
+ XTRN int        PermitAnyCrontab INIT(0);
+ XTRN int        ValidateMailRcpts INIT(0);
++XTRN char       MailCmd[MAX_COMMAND] INIT("");
+ 
+ #if DEBUGGING
+ XTRN int	DebugFlags INIT(0);
+--- usercrond-1.0/cron.8.-m_option	2005-11-13 15:46:37.000000000 -0500
++++ usercrond-1.0/cron.8	2005-11-13 17:10:34.000000000 -0500
+@@ -29,6 +29,7 @@
+ .IR load_avg ]
+ .RB [ \-n ]
+ .RB [ \-p ]
++.RB [ \-m <mail command> ]
+ .SH DESCRIPTION
+ .I Cron
+ should be started from /etc/rc or /etc/rc.local.  It will return immediately,
+@@ -63,6 +64,16 @@
+ .IR Crontab (1)
+ command updates the modtime of the spool directory whenever it changes a
+ crontab.
++.PP 
++The
++.B -m
++option allows you to specify a shell command string to use for sending
++cron mail output instead of 
++.IR sendmail (8).
++This command must accept a fully
++formatted mail message (with headers) on stdin and send it as a mail
++message to the recipients specified in the mail headers.
++.PP 
+ .SS Daylight Saving Time and other time changes
+ Local time changes of less than three hours, such as those caused
+ by the start or end of Daylight Saving Time, are handled specially.
+--- usercrond-1.0/cron.c.-m_option	2005-11-13 15:46:37.000000000 -0500
++++ usercrond-1.0/cron.c	2005-11-13 16:58:30.000000000 -0500
+@@ -48,7 +48,7 @@
+ usage(void) {
+ 	const char **dflags;
+ 
+-	fprintf(stderr, "usage:  %s [-n] [-p] [-x [", ProgramName);
++	fprintf(stderr, "usage:  %s [-n] [-p] [-m <mail command>] [-x [", ProgramName);
+ 	for (dflags = DebugFlagNames; *dflags; dflags++)
+ 		fprintf(stderr, "%s%s", *dflags, dflags[1] ? "," : "]");
+ 	fprintf(stderr, "]\n");
+@@ -437,7 +437,7 @@
+ parse_args(int argc, char *argv[]) {
+ 	int argch;
+ 
+-	while (-1 != (argch = getopt(argc, argv, "npx:"))) {
++	while (-1 != (argch = getopt(argc, argv, "npx:m:"))) {
+ 		switch (argch) {
+ 		default:
+ 			usage();
+@@ -451,6 +451,9 @@
+ 		case 'p':
+ 		        PermitAnyCrontab=1;
+ 			break;
++		case 'm':
++			strncpy(MailCmd, optarg, MAX_COMMAND);
++			break;
+ 		}
+ 	}
+ }

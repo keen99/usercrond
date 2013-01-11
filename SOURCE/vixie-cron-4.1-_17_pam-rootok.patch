@@ -1,0 +1,10 @@
+--- usercrond-1.0/crond.pam.pam-rootok	2004-07-29 09:21:11.000000000 -0400
++++ usercrond-1.0/crond.pam	2004-07-30 14:59:04.508666000 -0400
+@@ -2,6 +2,7 @@
+ # The PAM configuration file for the cron daemon
+ #
+ #
++auth	   sufficient /lib/security/$ISA/pam_rootok.so
+ auth       required  /lib/security/$ISA/pam_stack.so service=system-auth
+ auth       required  pam_env.so
+ account    required  /lib/security/$ISA/pam_stack.so service=system-auth

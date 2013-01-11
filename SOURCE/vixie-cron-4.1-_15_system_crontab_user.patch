@@ -1,0 +1,11 @@
+--- usercrond-1.0/database.c.system-crontab-user	2004-07-28 10:33:13.601263000 -0400
++++ usercrond-1.0/database.c	2004-07-28 10:33:34.424419000 -0400
+@@ -133,7 +133,7 @@
+ 		if (!glue_strings(tabname, sizeof tabname, RH_CROND_DIR, fname, '/'))
+ 			continue;	/* XXX log? */
+ 
+-		process_crontab("root", "*system*", tabname,
++		process_crontab("root", NULL, tabname,
+ 				&crond_stat, &new_db, old_db);
+ 	}
+ 	closedir(dir);

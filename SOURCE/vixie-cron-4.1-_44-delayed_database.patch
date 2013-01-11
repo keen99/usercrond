@@ -1,0 +1,20 @@
+--- usercrond-1.0/cron.c.delay	2006-08-25 08:55:33.000000000 +0200
++++ usercrond-1.0/cron.c	2006-08-25 13:30:51.000000000 +0200
+@@ -175,7 +175,8 @@
+ 		 * clock.  Classify the change into one of 4 cases.
+ 		 */
+ 		timeDiff = timeRunning - virtualTime;
+-
++		
++		load_database(&database);
+ 		/* shortcut for the most common case */
+ 		if (timeDiff == 1) {
+ 			virtualTime = timeRunning;
+@@ -275,7 +276,6 @@
+ 			got_sigchld = 0;
+ 			sigchld_reaper();
+ 		}
+-		load_database(&database);
+ 	}
+ }
+ 

@@ -1,0 +1,138 @@
+--- usercrond-1.0/externs.h.mail_i18n	2004-07-21 09:31:55.000000000 -0400
++++ usercrond-1.0/externs.h	2006-02-07 13:06:46.000000000 -0500
+@@ -61,6 +61,12 @@
+ # include <bsd_auth.h>
+ #endif /*BSD_AUTH*/
+ 
++/* include locale stuff for mailer "Content-Type": 
++ */
++#include <locale.h>
++#include <nl_types.h>
++#include <langinfo.h>
++
+ #define DIR_T	struct dirent
+ #define WAIT_T	int
+ #define SIG_T	sig_t
+--- usercrond-1.0/cron.c.mail_i18n	2006-01-26 14:41:39.000000000 -0500
++++ usercrond-1.0/cron.c	2006-02-07 13:10:42.000000000 -0500
+@@ -60,6 +60,7 @@
+ 	struct sigaction sact;
+ 	cron_db	database;
+ 	int fd;
++	char *cs;
+ 
+ 	ProgramName = argv[0];
+ 
+@@ -99,6 +100,16 @@
+ 	if ( getenv("CRON_VALIDATE_MAILRCPTS") != 0L )
+ 	    ValidateMailRcpts=1;
+ 
++	/* Get the default locale character set for the mail 
++	 * "Content-Type: ...; charset=" header
++	 */
++	setlocale(LC_ALL,""); /* set locale to system defaults or to
++				 that specified by any  LC_* env vars */
++	if ( ( cs = nl_langinfo( CODESET ) ) != 0L )
++	    strncpy( cron_default_mail_charset, cs, MAX_ENVSTR );
++	else
++	    strcpy( cron_default_mail_charset, "US-ASCII" );
++	
+ 	/* if there are no debug flags turned on, fork as a daemon should.
+ 	 */
+ 	if (DebugFlags) {
+--- usercrond-1.0/do_command.c.mail_i18n	2006-01-26 14:41:39.000000000 -0500
++++ usercrond-1.0/do_command.c	2006-02-07 13:19:27.000000000 -0500
+@@ -375,6 +375,8 @@
+ 				char	**env;
+ 				char	mailcmd[MAX_COMMAND];
+ 				char	hostname[MAXHOSTNAMELEN];
++				char    *content_type = env_get("CONTENT_TYPE",jobenv),
++				        *content_transfer_encoding = env_get("CONTENT_TRANSFER_ENCODING",jobenv);
+ 
+ 				gethostname(hostname, MAXHOSTNAMELEN);
+ 				
+@@ -400,10 +402,40 @@
+ 				fprintf(mail, "Subject: Cron <%s@%s> %s\n",
+ 					usernm, first_word(hostname, "."),
+ 					e->cmd);
++
+ #ifdef MAIL_DATE
+ 				fprintf(mail, "Date: %s\n",
+ 					arpadate(&StartTime));
+ #endif /*MAIL_DATE*/
++				if ( content_type == 0L )
++				{   
++					fprintf(mail, "Content-Type: text/plain; charset=%s\n",
++						cron_default_mail_charset
++					       );
++				}else
++				{       /* user specified Content-Type header. 
++					 * disallow new-lines for security reasons 
++					 * (else users could specify arbitrary mail headers!)
++					 */
++					char *nl=content_type;
++					size_t ctlen = strlen(content_type);				    
++					while(  (*nl != '\0') 
++					     && ((nl=strchr(nl,'\n')) != 0L)
++					     && (nl < (content_type+ctlen)) 
++					     ) *nl = ' ';
++					fprintf(mail,"Content-Type: %s\n", content_type);
++				}
++				if ( content_transfer_encoding != 0L )
++				{
++					char *nl=content_transfer_encoding;
++					size_t ctlen = strlen(content_transfer_encoding);
++					while(  (*nl != '\0') 
++					     && ((nl=strchr(nl,'\n')) != 0L)
++					     && (nl < (content_transfer_encoding+ctlen))
++					     ) *nl = ' ';				
++					fprintf(mail,"Content-Transfer-Encoding: %s\n", content_transfer_encoding);
++				}
++
+ 				for (env = jobenv;  *env;  env++)
+ 					fprintf(mail, "X-Cron-Env: <%s>\n",
+ 						*env);
+--- usercrond-1.0/crontab.5.mail_i18n	2006-01-26 14:41:39.000000000 -0500
++++ usercrond-1.0/crontab.5	2006-02-07 13:34:42.000000000 -0500
+@@ -61,7 +61,7 @@
+ .IR cron (8)
+ daemon.
+ SHELL is set to /bin/sh, and LOGNAME and HOME are set from the /etc/passwd 
+-line of the crontab's owner.
++line of the crontab\'s owner.
+ HOME and SHELL may be overridden by settings in the crontab; LOGNAME may not.
+ .PP
+ (Another note: the LOGNAME variable is sometimes called USER on BSD systems...
+@@ -74,8 +74,18 @@
+ sent to the user so named.  If MAILTO is defined but empty (MAILTO=""), no
+ mail will be sent.  Otherwise mail is sent to the owner of the crontab.  This
+ option is useful if you decide on /bin/mail instead of /usr/lib/sendmail as
+-your mailer when you install cron -- /bin/mail doesn't do aliasing, and UUCP
+-usually doesn't read its mail.
++your mailer when you install cron -- /bin/mail doesn\'t do aliasing, and UUCP
++usually doesn\'t read its mail.
++.PP
++By default, cron will send mail using the mail 'Content-Type:' header of 'text/plain' with the 'charset=' parameter set to the charmap / codeset of the locale in which 
++.IR crond(8)
++is started up - ie. either the default system locale, if no LC_* environment
++variables are set, or the locale specified by the LC_* environment variables
++( see 
++.IR locale(7) ). 
++You can use different character encodings for mailed cron job output by 
++setting the CONTENT_TYPE and CONTENT_TRANSFER_ENCODING variables in crontabs,
++to the correct values of the mail headers of those names.  
+ .PP
+ The format of a cron command is very much the V7 standard, with a number of
+ upward-compatible extensions.  Each line has five time and date fields,
+--- usercrond-1.0/globals.h.mail_i18n	2006-01-26 14:41:39.000000000 -0500
++++ usercrond-1.0/globals.h	2006-02-07 12:46:34.000000000 -0500
+@@ -66,7 +66,8 @@
+ XTRN int        PermitAnyCrontab INIT(0);
+ XTRN int        ValidateMailRcpts INIT(0);
+ XTRN char       MailCmd[MAX_COMMAND] INIT("");
+-
++XTRN char       cron_default_mail_charset[MAX_ENVSTR] INIT("");
++ 
+ #if DEBUGGING
+ XTRN int	DebugFlags INIT(0);
+ XTRN const char *DebugFlagNames[]

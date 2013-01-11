@@ -1,0 +1,42 @@
+--- usercrond-1.0/cron.8.no_0600_mode_enforce	2004-08-11 16:40:19.538738000 -0400
++++ usercrond-1.0/cron.8	2004-08-11 16:52:54.638882000 -0400
+@@ -90,8 +90,10 @@
+ .SH CAVEATS
+ In this version of
+ .BR cron ,
+-/etc/crontab must not be readable or writable by any user other than root.
+-In other words, it should be mode 0600.
++/etc/crontab must not be writable by any user other than root.
++No crontab files may be links, or linked to by any other file.
++No crontab files may be executable, or be writable by any user
++other than their owner.
+ .SH "SEE ALSO"
+ .IR crontab (1),
+ .IR crontab (5),
+--- usercrond-1.0/crontab.5.no_0600_mode_enforce	2004-08-11 16:40:19.951325000 -0400
++++ usercrond-1.0/crontab.5	2004-08-11 16:53:45.047423000 -0400
+@@ -206,6 +206,13 @@
+ @daily     :    Run once a day, ie.   "0 0 * * *".
+ @hourly    :    Run once an hour, ie. "0 * * * *".
+ .fi
++.SH CAVEATS
++In this version of
++.BR cron ,
++/etc/crontab must not be writable by any user other than root.
++No crontab files may be links, or linked to by any other file.
++No crontab files may be executable, or be writable by any user
++other than their owner.
+ .SH AUTHOR
+ .nf
+ Paul Vixie <vixie@isc.org>
+--- usercrond-1.0/database.c.no_0600_mode_enforce	2004-08-11 16:40:19.691585000 -0400
++++ usercrond-1.0/database.c	2004-08-11 16:45:35.564396000 -0400
+@@ -261,7 +261,7 @@
+ 		log_it(fname, getpid(), "NOT REGULAR", tabname);
+ 		goto next_crontab;
+ 	}
+-	if ((statbuf->st_mode & 07777) != 0600) {
++	if ((statbuf->st_mode & 07733) != 0600) {
+ 		log_it(fname, getpid(), "BAD FILE MODE", tabname);
+ 		goto next_crontab;
+ 	}

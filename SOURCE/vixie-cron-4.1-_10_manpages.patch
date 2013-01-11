@@ -1,0 +1,77 @@
+--- usercrond-1.0-rh/cron.8.manpages	2004-07-21 10:16:43.000000000 -0400
++++ usercrond-1.0-rh/cron.8	2004-07-22 12:26:36.000000000 -0400
+@@ -36,10 +36,11 @@
+ starting it out of init.
+ .PP
+ .I Cron
+-searches /var/cron/tabs for crontab files which are named after accounts in
++searches /var/spool/cron for crontab files which are named after accounts in
+ /etc/passwd; crontabs found are loaded into memory.
+ .I Cron
+-also searches for /etc/crontab which is in a different format (see
++also searches for /etc/crontab and the files in the /etc/cron.d directory,
++which are in a different format (see
+ .IR crontab (5)).
+ .I Cron
+ then wakes up every minute, examining all stored crontabs, checking each
+--- usercrond-1.0-rh/crontab.1.manpages	2004-07-21 10:16:43.000000000 -0400
++++ usercrond-1.0-rh/crontab.1	2004-07-22 12:20:10.000000000 -0400
+@@ -88,8 +88,8 @@
+ crontab(5), cron(8)
+ .SH FILES
+ .nf
+-/var/cron/cron.allow
+-/var/cron/cron.deny
++/etc/cron.allow
++/etc/cron.deny
+ .fi
+ .SH STANDARDS
+ The
+--- usercrond-1.0-rh/crontab.5.manpages	2004-07-21 10:16:43.000000000 -0400
++++ usercrond-1.0-rh/crontab.5	2004-07-22 12:32:07.000000000 -0400
+@@ -86,8 +86,15 @@
+ .I and
+ when at least one of the two day fields (day of month, or day of week)
+ match the current time (see ``Note'' below).
++Note that this means that non-existant times, such as "missing hours"
++during daylight savings conversion, will never match, causing jobs
++scheduled during the "missing times" not to be run.  Similarly, times
++that occur more than once (again, during daylight savings conversion)
++will cause matching jobs to be run twice.
++.PP
+ .IR cron (8)
+ examines cron entries once every minute.
++.PP
+ The time and date fields are:
+ .IP
+ .ta 1.5i
+@@ -101,7 +108,7 @@
+ .br
+ day of month	1-31
+ .br
+-month	0-12 (or names, see below)
++month	1-12 (or names, see below)
+ .br
+ day of week	0-7 (0 or 7 is Sun, or use names)
+ .br
+@@ -164,6 +171,9 @@
+ 23 0-23/2 * * * echo "run 23 minutes after midn, 2am, 4am ..., everyday"
+ 5 4 * * sun     echo "run at 5 after 4 every sunday"
+ .fi
++.SH FILES
++/etc/crontab			System crontab file
++
+ .SH SEE ALSO
+ cron(8), crontab(1)
+ .SH EXTENSIONS
+--- usercrond-1.0-rh/FEATURES.manpages	2004-07-21 10:16:43.000000000 -0400
++++ usercrond-1.0-rh/FEATURES	2004-07-22 12:27:54.000000000 -0400
+@@ -82,3 +82,8 @@
+ 	act this way and do the more reasonable thing, which is (IMHO) to "or"
+ 	the various field-matches together.  In that sense this cron may not
+ 	be completely similar to some AT&T crons.
++
++--	If it exists, the /etc/cron.d/ directory is parsed like the cron
++	spool directory, except that the files in it are not user-specific
++	and are therefore read with /etc/crontab syntax (the user is
++	specified explicitly in the 6th column).

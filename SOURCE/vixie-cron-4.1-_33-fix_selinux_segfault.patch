@@ -1,0 +1,30 @@
+--- usercrond-1.0/user.c.fix_selinux_segfault	2005-03-15 08:34:08.143412000 -0500
++++ usercrond-1.0/user.c	2005-03-15 08:40:22.616563000 -0500
+@@ -40,7 +40,7 @@
+ 				 int crontab_fd, 
+ 				 security_context_t *rcontext, 
+ 				 const char *tabname) {
+-	security_context_t scontext;
++	security_context_t scontext=NULL;
+ 	security_context_t  file_context=NULL;
+ 	struct av_decision avd;
+ 	int retval=0;
+@@ -51,6 +51,7 @@
+ 			return -1;
+ 		} else {
+ 			log_it(name, getpid(), "No security context but SELinux in permissive mode, continuing",tabname);
++			return 0;
+ 		}
+ 	}
+ 	
+--- usercrond-1.0/do_command.c.fix_selinux_segfault	2005-03-15 08:34:08.720833000 -0500
++++ usercrond-1.0/do_command.c	2005-03-15 08:41:23.167952000 -0500
+@@ -330,7 +330,7 @@
+ # endif /*DEBUGGING*/
+ 
+ #ifdef WITH_SELINUX
+-			if (is_selinux_enabled() >0 ) {
++			if ((is_selinux_enabled() >0) && (u->scontext != 0L)) {
+ 				if (setexeccon(u->scontext) < 0) {
+ 					if (security_getenforce() > 0) {
+ 						fprintf(stderr, 
