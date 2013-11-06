@@ -27,3 +27,6 @@ tada.
 
 sample sysV init script in usercrond.init (requires config for the user to run it as - just su's to the user)
 
+
+
+Credit to Scott F, if he ever wants to take it, for doing the real work to make this happen!  I just provided the idea and the push!
